@@ -1,146 +1,140 @@
 import 'package:flutter/material.dart';
+import '../../main.dart';
+import 'email_login_screen.dart';
+import 'signup_screen.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends StatelessWidget {
   const LoginScreen({Key? key}) : super(key: key);
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  bool isLoading = false;
-
-  @override
-  void dispose() {
-    emailController.dispose();
-    passwordController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: kPrimaryDark,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 40),
-              // Header
+              const Spacer(flex: 2),
+              // Logo & branding
               Column(
                 children: [
                   Container(
-                    width: 80,
-                    height: 80,
+                    width: 88,
+                    height: 88,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.secondary,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
+                      color: kNeonYellow,
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    child: const Icon(Icons.fitness_center, size: 40, color: Colors.white),
+                    child: const Icon(Icons.bolt, size: 52, color: Colors.black),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'SlayFit',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(height: 20),
+                  const Text(
+                    'SLAYFIT',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      color: kTextPrimary,
+                      letterSpacing: 4,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'Your Weight Loss Journey',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      color: kTextSecondary,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 48),
-              // Form
-              Text(
-                'Welcome Back',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Email field
-              TextField(
-                controller: emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'john@example.com',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-              // Password field
-              TextField(
-                controller: passwordController,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  hintText: '••••••••',
-                  prefixIcon: const Icon(Icons.lock),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 32),
-              // Login button
-              ElevatedButton(
-                onPressed: isLoading ? null : _handleLogin,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: isLoading
-                    ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-                    : const Text(
-                  'Login',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Sign up link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              const Spacer(flex: 2),
+              // Auth buttons
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    "Don't have an account? ",
-                    style: Theme.of(context).textTheme.labelMedium,
+                  _SocialButton(
+                    label: 'Continue with Google',
+                    icon: _GoogleIcon(),
+                    backgroundColor: Colors.white,
+                    textColor: Colors.black87,
+                    onTap: () => _showComingSoon(context, 'Google'),
                   ),
-                  GestureDetector(
-                    onTap: _navigateToSignUp,
-                    child: Text(
-                      'Sign up',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(height: 12),
+                  _SocialButton(
+                    label: 'Continue with Apple',
+                    icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+                    backgroundColor: const Color(0xFF1C1C1E),
+                    textColor: Colors.white,
+                    onTap: () => _showComingSoon(context, 'Apple'),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(color: Color(0xFF2A3550))),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or',
+                          style: TextStyle(color: kTextSecondary, fontSize: 13),
+                        ),
+                      ),
+                      const Expanded(child: Divider(color: Color(0xFF2A3550))),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  OutlinedButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SignUpScreen()),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: kNeonYellow,
+                      side: const BorderSide(color: kNeonYellow, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Continue with Email',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
                       ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 28),
+              // Sign in link
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Already have an account? ',
+                    style: TextStyle(color: kTextSecondary, fontSize: 14),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
+                    ),
+                    child: const Text(
+                      'Sign in',
+                      style: TextStyle(
+                        color: kNeonYellow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -148,14 +142,120 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _handleLogin() {
-    // TODO: Implement login logic
+  void _showComingSoon(BuildContext context, String provider) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Login feature coming soon')),
+      SnackBar(
+        content: Text('$provider sign in requires additional setup. Use email for now.'),
+        backgroundColor: kCardDark,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+class _SocialButton extends StatelessWidget {
+  final String label;
+  final Widget icon;
+  final Color backgroundColor;
+  final Color textColor;
+  final VoidCallback onTap;
+
+  const _SocialButton({
+    required this.label,
+    required this.icon,
+    required this.backgroundColor,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      child: CustomPaint(painter: _GooglePainter()),
+    );
+  }
+}
+
+class _GooglePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // Draw colored segments approximating the Google logo
+    final segments = [
+      (Colors.red, -0.1, 0.9),
+      (Colors.yellow, 0.9, 1.9),
+      (Colors.green, 1.9, 2.7),
+      (Colors.blue, 2.7, 3.7),
+    ];
+
+    for (final s in segments) {
+      final paint = Paint()
+        ..color = s.$1
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.25;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius * 0.7),
+        s.$2,
+        s.$3 - s.$2,
+        false,
+        paint,
+      );
+    }
+
+    // White cutout for the "G" gap
+    final cutPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(size.width / 2, size.height * 0.3, size.width / 2, size.height * 0.4),
+      cutPaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(size.width * 0.5, size.height * 0.42, size.width * 0.5, size.height * 0.16),
+      Paint()
+        ..color = Colors.blue
+        ..style = PaintingStyle.fill,
     );
   }
 
-  void _navigateToSignUp() {
-    // TODO: Navigate to signup screen
-  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

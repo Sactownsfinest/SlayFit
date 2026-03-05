@@ -33,6 +33,12 @@ dependencies:
   # Utilities
   logger: ^2.0.0
 
+dependency_overrides:
+  # Force older iOS platform packages to avoid objective_c >=6.x build hook
+  # that fails on Windows paths with spaces (C:\Users\Dan Maeon\...)
+  path_provider_foundation: 2.3.2
+  shared_preferences_foundation: 2.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -47,18 +53,10 @@ flutter:
     - assets/icons/
     - assets/data/
 
-  fonts:
-    - family: Poppins
-      fonts:
-        - asset: assets/fonts/Poppins-Regular.ttf
-        - asset: assets/fonts/Poppins-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Poppins-SemiBold.ttf
-          weight: 600
 
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: "assets/images/app_icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#0A0E1A"

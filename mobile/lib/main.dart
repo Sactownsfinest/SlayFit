@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/home_screen.dart';
 import 'screens/auth/login_screen.dart';
-import 'providers/auth_provider.dart';
+import 'providers/auth_provider.dart' show authProvider, AuthStatus;
 
 // SlayFit brand colors
 const kPrimaryDark = Color(0xFF0A0E1A);
@@ -32,6 +32,7 @@ class SlayFitApp extends ConsumerWidget {
       title: 'SlayFit',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
+
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -138,16 +139,11 @@ class SlayFitApp extends ConsumerWidget {
           labelSmall: TextStyle(color: kTextSecondary, fontSize: 11),
         ),
       ),
-      home: authState.when(
-        data: (user) {
-          if (user == null) {
-            return const LoginScreen();
-          }
-          return const HomeScreen();
-        },
-        loading: () => const SplashScreen(),
-        error: (err, stack) => const LoginScreen(),
-      ),
+      home: switch (authState.status) {
+        AuthStatus.loading => const SplashScreen(),
+        AuthStatus.authenticated => const HomeScreen(),
+        AuthStatus.unauthenticated => const LoginScreen(),
+      },
     );
   }
 }
