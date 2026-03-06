@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
+import 'profile_screen.dart';
 import 'food_log_screen.dart';
 import 'progress_screen.dart';
 import 'activity_screen.dart';
@@ -20,7 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
     FoodLogScreen(),
     ActivityScreen(),
     ProgressScreen(),
-    _ProfilePlaceholder(),
+    ProfileScreen(),
   ];
 
   @override
@@ -140,25 +141,3 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-class _ProfilePlaceholder extends StatelessWidget {
-  const _ProfilePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          floating: true,
-          snap: true,
-          title: Text('Profile'),
-        ),
-        SliverFillRemaining(
-          child: Center(
-            child: Text('Profile coming in Phase 3',
-                style: TextStyle(color: kTextSecondary)),
-          ),
-        ),
-      ],
-    );
-  }
-}

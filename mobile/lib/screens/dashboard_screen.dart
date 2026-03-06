@@ -4,6 +4,9 @@ import 'package:fl_chart/fl_chart.dart';
 import '../providers/food_provider.dart';
 import '../providers/activity_provider.dart';
 import '../providers/weight_provider.dart';
+import '../providers/user_provider.dart';
+import '../providers/water_provider.dart';
+import '../providers/streak_provider.dart';
 import '../main.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -12,8 +15,11 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final food = ref.watch(foodLogProvider);
+    final profile = ref.watch(userProfileProvider);
     final activity = ref.watch(activityProvider);
     final weight = ref.watch(weightProvider);
+    final water = ref.watch(waterProvider);
+    final streak = ref.watch(streakProvider);
 
     return CustomScrollView(
       slivers: [
@@ -44,11 +50,13 @@ class DashboardScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              _GreetingCard(weight: weight),
+              _GreetingCard(weight: weight, profile: profile, streak: streak),
               const SizedBox(height: 16),
               _CalorieRingCard(food: food, activity: activity),
               const SizedBox(height: 16),
-              _MacrosCard(food: food),
+              _WaterCard(water: water),
+              const SizedBox(height: 16),
+              _MacrosCard(food: food, profile: profile),
               const SizedBox(height: 16),
               _TodayActivityCard(activity: activity),
               const SizedBox(height: 16),
@@ -64,7 +72,9 @@ class DashboardScreen extends ConsumerWidget {
 
 class _GreetingCard extends StatelessWidget {
   final WeightState weight;
-  const _GreetingCard({required this.weight});
+  final UserProfile profile;
+  final StreakState streak;
+  const _GreetingCard({required this.weight, required this.profile, required this.streak});
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +84,7 @@ class _GreetingCard extends StatelessWidget {
         : hour < 17
             ? 'Good Afternoon'
             : 'Good Evening';
+    final firstName = profile.name.split(' ').first;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -87,7 +98,7 @@ class _GreetingCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(greeting,
+              Text('$greeting, $firstName!',
                   style: const TextStyle(color: kTextSecondary, fontSize: 13)),
               const SizedBox(height: 4),
               const Text('Keep Slaying Today!',
@@ -98,29 +109,54 @@ class _GreetingCard extends StatelessWidget {
                   )),
             ],
           ),
-          if (weight.latest != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: kNeonYellow.withValues(alpha:0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kNeonYellow.withValues(alpha:0.3)),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    '${weight.latest!.weightKg.toStringAsFixed(1)} kg',
-                    style: const TextStyle(
-                      color: kNeonYellow,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+          Row(
+            children: [
+              if (streak.currentStreak > 0)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
                   ),
-                  const Text('current',
-                      style: TextStyle(color: kTextSecondary, fontSize: 10)),
-                ],
-              ),
-            ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.local_fire_department, color: Colors.orangeAccent, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${streak.currentStreak}',
+                        style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              if (weight.latest != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: kNeonYellow.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '${weight.latest!.weightKg.toStringAsFixed(1)} kg',
+                        style: const TextStyle(
+                          color: kNeonYellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const Text('current',
+                          style: TextStyle(color: kTextSecondary, fontSize: 10)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -252,7 +288,8 @@ class _RingStat extends StatelessWidget {
 
 class _MacrosCard extends StatelessWidget {
   final FoodLogState food;
-  const _MacrosCard({required this.food});
+  final UserProfile profile;
+  const _MacrosCard({required this.food, required this.profile});
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +312,7 @@ class _MacrosCard extends StatelessWidget {
           _MacroBar(
             label: 'Protein',
             current: food.totalProtein,
-            goal: 150,
+            goal: profile.proteinGoalG.toDouble(),
             color: const Color(0xFF60A5FA),
             unit: 'g',
           ),
@@ -283,7 +320,7 @@ class _MacrosCard extends StatelessWidget {
           _MacroBar(
             label: 'Carbs',
             current: food.totalCarbs,
-            goal: 200,
+            goal: profile.carbsGoalG.toDouble(),
             color: const Color(0xFFFBBF24),
             unit: 'g',
           ),
@@ -291,7 +328,7 @@ class _MacrosCard extends StatelessWidget {
           _MacroBar(
             label: 'Fat',
             current: food.totalFat,
-            goal: 65,
+            goal: profile.fatGoalG.toDouble(),
             color: const Color(0xFFF87171),
             unit: 'g',
           ),
@@ -501,6 +538,95 @@ class _MealRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WaterCard extends ConsumerWidget {
+  final WaterState water;
+  const _WaterCard({required this.water});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final totalMl = water.todayTotalMl;
+    final goalMl = water.dailyGoalMl;
+    final progress = water.todayProgressPercent;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.water_drop, color: Color(0xFF60A5FA), size: 18),
+                  SizedBox(width: 8),
+                  Text('Water',
+                      style: TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16)),
+                ],
+              ),
+              Text('${totalMl}ml / ${goalMl}ml',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: const Color(0xFF2A3550),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF60A5FA)),
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _WaterButton(label: '+250ml', amountMl: 250, ref: ref),
+              _WaterButton(label: '+500ml', amountMl: 500, ref: ref),
+              _WaterButton(label: '+750ml', amountMl: 750, ref: ref),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WaterButton extends StatelessWidget {
+  final String label;
+  final int amountMl;
+  final WidgetRef ref;
+  const _WaterButton({required this.label, required this.amountMl, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => ref.read(waterProvider.notifier).addWater(amountMl),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF60A5FA).withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF60A5FA).withValues(alpha: 0.3)),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+                color: Color(0xFF60A5FA),
+                fontWeight: FontWeight.w600,
+                fontSize: 13)),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart';
 import '../../providers/auth_provider.dart';
+import '../home_screen.dart';
 import 'email_login_screen.dart';
 
 class SignUpScreen extends ConsumerStatefulWidget {
@@ -50,11 +51,17 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
     setState(() => _isLoading = true);
     await ref.read(authProvider.notifier).signUpWithEmail(name, email, password);
-    if (mounted) setState(() => _isLoading = false);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
 
     final authState = ref.read(authProvider);
-    if (mounted && authState.error != null) {
+    if (authState.error != null) {
       _showError(authState.error!);
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
     }
   }
 

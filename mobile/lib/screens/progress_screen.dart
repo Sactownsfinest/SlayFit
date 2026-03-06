@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/weight_provider.dart';
 import '../providers/food_provider.dart';
+import '../providers/activity_provider.dart';
+import '../providers/user_provider.dart';
 import '../main.dart';
 
 class ProgressScreen extends ConsumerWidget {
@@ -31,6 +35,8 @@ class ProgressScreen extends ConsumerWidget {
               _LogWeightButton(weight: weight),
               const SizedBox(height: 16),
               _CalorieTrendCard(food: food),
+              const SizedBox(height: 16),
+              const _WeeklyInsightsCard(),
             ]),
           ),
         ),
@@ -295,6 +301,252 @@ class _LogWeightButton extends ConsumerWidget {
             },
             child: const Text('Save'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyInsightsCard extends ConsumerStatefulWidget {
+  const _WeeklyInsightsCard();
+
+  @override
+  ConsumerState<_WeeklyInsightsCard> createState() =>
+      _WeeklyInsightsCardState();
+}
+
+class _WeeklyInsightsCardState extends ConsumerState<_WeeklyInsightsCard> {
+  bool _loaded = false;
+  double _avgCalories = 0;
+  double _avgProtein = 0;
+  int _totalActiveMinutes = 0;
+  int _daysHitGoal = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeekData();
+  }
+
+  Future<void> _loadWeekData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profile = ref.read(userProfileProvider);
+    final activity = ref.read(activityProvider);
+    final goal = profile.dailyCalorieGoal.toDouble();
+
+    double totalCalories = 0;
+    double totalProtein = 0;
+    int daysWithData = 0;
+    int daysHit = 0;
+
+    for (int i = 0; i < 7; i++) {
+      final date = DateTime.now().subtract(Duration(days: i));
+      final key =
+          'food_log_${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final json = prefs.getString(key);
+      if (json != null) {
+        final List list = jsonDecode(json);
+        double dayCal = 0;
+        double dayProtein = 0;
+        for (final item in list) {
+          dayCal += (item['calories'] as num).toDouble();
+          dayProtein += (item['protein'] as num).toDouble();
+        }
+        if (dayCal > 0) {
+          totalCalories += dayCal;
+          totalProtein += dayProtein;
+          daysWithData++;
+          if (dayCal <= goal) daysHit++;
+        }
+      }
+    }
+
+    // Total active minutes from last 7 days
+    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+    final activeMinutes = activity.entries
+        .where((e) => e.loggedAt.isAfter(sevenDaysAgo))
+        .fold(0, (s, e) => s + e.durationMinutes);
+
+    if (mounted) {
+      setState(() {
+        _avgCalories = daysWithData > 0 ? totalCalories / daysWithData : 0;
+        _avgProtein = daysWithData > 0 ? totalProtein / daysWithData : 0;
+        _totalActiveMinutes = activeMinutes;
+        _daysHitGoal = daysHit;
+        _loaded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = ref.watch(userProfileProvider);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Weekly Insights',
+              style: TextStyle(
+                  color: kTextPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('Last 7 days',
+              style: TextStyle(color: kTextSecondary, fontSize: 12)),
+          const SizedBox(height: 16),
+          if (!_loaded)
+            const Center(
+                child: CircularProgressIndicator(color: kNeonYellow))
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _InsightTile(
+                    label: 'Avg Calories',
+                    value: '${_avgCalories.toInt()}',
+                    unit: 'kcal',
+                    color: kNeonYellow,
+                    icon: Icons.local_fire_department,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InsightTile(
+                    label: 'Avg Protein',
+                    value: '${_avgProtein.toInt()}',
+                    unit: 'g',
+                    color: const Color(0xFF60A5FA),
+                    icon: Icons.egg_alt_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _InsightTile(
+                    label: 'Active Mins',
+                    value: '$_totalActiveMinutes',
+                    unit: 'min',
+                    color: Colors.greenAccent,
+                    icon: Icons.directions_run,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InsightTile(
+                    label: 'Goal Days',
+                    value: '$_daysHitGoal / 7',
+                    unit: '',
+                    color: Colors.orangeAccent,
+                    icon: Icons.emoji_events_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: kNeonYellow.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border:
+                    Border.all(color: kNeonYellow.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insights, color: kNeonYellow, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _buildCallout(profile),
+                      style: const TextStyle(
+                          color: kTextPrimary, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _buildCallout(UserProfile profile) {
+    if (_avgCalories == 0) return 'Start logging to see your weekly insights!';
+    final proteinGoal = profile.proteinGoalG;
+    if (_avgProtein >= proteinGoal) {
+      return 'You hit your protein goal every day this week. Keep it up!';
+    } else if (_daysHitGoal >= 5) {
+      return 'You hit your calorie goal $_daysHitGoal/7 days. Great consistency!';
+    } else if (_totalActiveMinutes >= 150) {
+      return 'You logged $_totalActiveMinutes active minutes this week. WHO recommends 150 — nailed it!';
+    } else {
+      return 'You averaged ${_avgCalories.toInt()} kcal/day. Keep logging to track your trends!';
+    }
+  }
+}
+
+class _InsightTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final String unit;
+  final Color color;
+  final IconData icon;
+
+  const _InsightTile({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 8),
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: value,
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18),
+                ),
+                if (unit.isNotEmpty)
+                  TextSpan(
+                    text: ' $unit',
+                    style: const TextStyle(
+                        color: kTextSecondary, fontSize: 11),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(label,
+              style:
+                  const TextStyle(color: kTextSecondary, fontSize: 11)),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart';
 import '../../providers/auth_provider.dart';
+import '../home_screen.dart';
 import 'signup_screen.dart';
 
 class EmailLoginScreen extends ConsumerStatefulWidget {
@@ -37,15 +38,21 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
 
     setState(() => _isLoading = true);
     await ref.read(authProvider.notifier).signInWithEmail(email, password);
-    if (mounted) setState(() => _isLoading = false);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
 
     final authState = ref.read(authProvider);
-    if (mounted && authState.error != null) {
+    if (authState.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authState.error!),
           backgroundColor: Colors.red.shade800,
         ),
+      );
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
       );
     }
   }

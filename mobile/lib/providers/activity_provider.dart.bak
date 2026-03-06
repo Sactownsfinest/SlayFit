@@ -1,7 +1,4 @@
-import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'streak_provider.dart';
 
 enum ActivityCategory { cardio, strength, flexibility, sports, other }
 
@@ -21,33 +18,32 @@ class ActivityEntry {
     required this.caloriesBurned,
     required this.loggedAt,
   });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'category': category.name,
-        'durationMinutes': durationMinutes,
-        'caloriesBurned': caloriesBurned,
-        'loggedAt': loggedAt.toIso8601String(),
-      };
-
-  factory ActivityEntry.fromJson(Map<String, dynamic> j) => ActivityEntry(
-        id: j['id'],
-        name: j['name'],
-        category: ActivityCategory.values.firstWhere(
-          (c) => c.name == j['category'],
-          orElse: () => ActivityCategory.other,
-        ),
-        durationMinutes: j['durationMinutes'],
-        caloriesBurned: (j['caloriesBurned'] as num).toDouble(),
-        loggedAt: DateTime.parse(j['loggedAt']),
-      );
 }
 
 class ActivityState {
   final List<ActivityEntry> entries;
 
   const ActivityState({this.entries = const []});
+
+  double get todayCaloriesBurned {
+    final today = DateTime.now();
+    return entries
+        .where((e) =>
+            e.loggedAt.year == today.year &&
+            e.loggedAt.month == today.month &&
+            e.loggedAt.day == today.day)
+        .fold(0, (sum, e) => sum + e.caloriesBurned);
+  }
+
+  int get todayMinutes {
+    final today = DateTime.now();
+    return entries
+        .where((e) =>
+            e.loggedAt.year == today.year &&
+            e.loggedAt.month == today.month &&
+            e.loggedAt.day == today.day)
+        .fold(0, (sum, e) => sum + e.durationMinutes);
+  }
 
   List<ActivityEntry> get todayEntries {
     final today = DateTime.now();
@@ -59,39 +55,13 @@ class ActivityState {
         .toList();
   }
 
-  double get todayCaloriesBurned =>
-      todayEntries.fold(0, (s, e) => s + e.caloriesBurned);
-
-  int get todayMinutes =>
-      todayEntries.fold(0, (s, e) => s + e.durationMinutes);
-
-  ActivityState copyWith({List<ActivityEntry>? entries}) =>
-      ActivityState(entries: entries ?? this.entries);
+  ActivityState copyWith({List<ActivityEntry>? entries}) {
+    return ActivityState(entries: entries ?? this.entries);
+  }
 }
 
 class ActivityNotifier extends StateNotifier<ActivityState> {
-  final Ref _ref;
-  ActivityNotifier(this._ref) : super(const ActivityState()) {
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final json = prefs.getString('activity_log');
-    if (json != null) {
-      final List list = jsonDecode(json);
-      final entries = list.map((e) => ActivityEntry.fromJson(e)).toList();
-      state = ActivityState(entries: entries);
-    }
-  }
-
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'activity_log',
-      jsonEncode(state.entries.map((e) => e.toJson()).toList()),
-    );
-  }
+  ActivityNotifier() : super(const ActivityState());
 
   void logActivity({
     required String name,
@@ -108,23 +78,21 @@ class ActivityNotifier extends StateNotifier<ActivityState> {
       loggedAt: DateTime.now(),
     );
     state = state.copyWith(entries: [...state.entries, entry]);
-    _save();
-    _ref.read(streakProvider.notifier).onActivityLogged();
   }
 
   void removeEntry(String id) {
     state = state.copyWith(
       entries: state.entries.where((e) => e.id != id).toList(),
     );
-    _save();
   }
 }
 
 final activityProvider =
     StateNotifierProvider<ActivityNotifier, ActivityState>((ref) {
-  return ActivityNotifier(ref);
+  return ActivityNotifier();
 });
 
+// Common activities with estimated calories/min
 const List<Map<String, dynamic>> kCommonActivities = [
   {'name': 'Running', 'category': ActivityCategory.cardio, 'calsPerMin': 10.0},
   {'name': 'Walking', 'category': ActivityCategory.cardio, 'calsPerMin': 4.0},

@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../providers/food_provider.dart';
 import '../main.dart';
 
@@ -250,6 +253,110 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
   final _carbsController = TextEditingController();
   final _fatController = TextEditingController();
   final _servingController = TextEditingController(text: '100');
+  final _searchController = TextEditingController();
+
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _caloriesController.dispose();
+    _proteinController.dispose();
+    _carbsController.dispose();
+    _fatController.dispose();
+    _servingController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scanBarcode() async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _BarcodeScannerPage()),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _isSearching = true);
+    try {
+      final uri = Uri.parse(
+          'https://world.openfoodfacts.org/api/v0/product/$result.json');
+      final response = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 1) {
+          final product = data['product'] as Map<String, dynamic>;
+          final n = (product['nutriments'] as Map?) ?? {};
+          _nameController.text = product['product_name'] ?? 'Unknown';
+          _caloriesController.text =
+              ((n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0) as num)
+                  .toStringAsFixed(0);
+          _proteinController.text =
+              ((n['proteins_100g'] ?? 0) as num).toStringAsFixed(1);
+          _carbsController.text =
+              ((n['carbohydrates_100g'] ?? 0) as num).toStringAsFixed(1);
+          _fatController.text =
+              ((n['fat_100g'] ?? 0) as num).toStringAsFixed(1);
+          _servingController.text = '100';
+          setState(() {});
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Product not found in database')),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to look up barcode')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _searchFood(String query) async {
+    if (query.trim().length < 2) {
+      setState(() => _searchResults = []);
+      return;
+    }
+    setState(() => _isSearching = true);
+    try {
+      final uri = Uri.parse(
+        'https://world.openfoodfacts.org/cgi/search.pl'
+        '?search_terms=${Uri.encodeComponent(query)}'
+        '&json=1&page_size=8'
+        '&fields=product_name,nutriments',
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final products = (data['products'] as List?) ?? [];
+        setState(() {
+          _searchResults = products
+              .where((p) =>
+                  p['product_name'] != null &&
+                  (p['product_name'] as String).isNotEmpty)
+              .map<Map<String, dynamic>>((p) {
+            final n = (p['nutriments'] as Map?) ?? {};
+            return {
+              'name': p['product_name'] as String,
+              'cal': ((n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0) as num)
+                  .toDouble(),
+              'p': ((n['proteins_100g'] ?? 0) as num).toDouble(),
+              'c': ((n['carbohydrates_100g'] ?? 0) as num).toDouble(),
+              'f': ((n['fat_100g'] ?? 0) as num).toDouble(),
+            };
+          }).toList();
+        });
+      }
+    } catch (_) {
+      // Silently fail on network error
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
 
   // Quick-add common foods
   static const _quickFoods = [
@@ -320,6 +427,118 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
               ],
             ),
             const SizedBox(height: 12),
+            // Search bar + barcode button
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(color: kTextPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Search food database...',
+                      prefixIcon: _isSearching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: kNeonYellow),
+                              ),
+                            )
+                          : const Icon(Icons.search, color: kTextSecondary),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear,
+                                  color: kTextSecondary),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchResults = []);
+                              },
+                            )
+                          : null,
+                    ),
+                    onChanged: (v) => _searchFood(v),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _scanBarcode,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: kCardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A3550)),
+                    ),
+                    child: const Icon(Icons.qr_code_scanner,
+                        color: kNeonYellow, size: 24),
+                  ),
+                ),
+              ],
+            ),
+            if (_searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 200),
+                decoration: BoxDecoration(
+                  color: kCardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF2A3550)),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _searchResults.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: Color(0xFF2A3550)),
+                  itemBuilder: (_, i) {
+                    final food = _searchResults[i];
+                    return InkWell(
+                      onTap: () {
+                        _nameController.text = food['name'] as String;
+                        _caloriesController.text =
+                            (food['cal'] as double).toStringAsFixed(0);
+                        _proteinController.text =
+                            (food['p'] as double).toStringAsFixed(1);
+                        _carbsController.text =
+                            (food['c'] as double).toStringAsFixed(1);
+                        _fatController.text =
+                            (food['f'] as double).toStringAsFixed(1);
+                        _servingController.text = '100';
+                        _searchController.clear();
+                        setState(() => _searchResults = []);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                food['name'] as String,
+                                style: const TextStyle(
+                                    color: kTextPrimary, fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              '${(food['cal'] as double).toStringAsFixed(0)} kcal/100g',
+                              style: const TextStyle(
+                                  color: kNeonYellow,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             const Text('Quick Add',
                 style: TextStyle(color: kTextSecondary, fontSize: 12)),
             const SizedBox(height: 8),
@@ -349,6 +568,8 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            _TemplatesSection(meal: widget.meal),
             const SizedBox(height: 20),
             _InputField(
                 controller: _nameController,
@@ -433,6 +654,129 @@ class _InputField extends StatelessWidget {
       keyboardType: keyboardType,
       style: const TextStyle(color: kTextPrimary),
       decoration: InputDecoration(labelText: label),
+    );
+  }
+}
+
+class _TemplatesSection extends ConsumerWidget {
+  final MealType meal;
+  const _TemplatesSection({required this.meal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final templates = ref.watch(foodLogProvider).templates;
+    if (templates.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Templates',
+            style: TextStyle(color: kTextSecondary, fontSize: 12)),
+        const SizedBox(height: 8),
+        ...templates.map((t) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: kCardDark,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF2A3550)),
+                ),
+                child: ListTile(
+                  dense: true,
+                  title: Text(t.name,
+                      style: const TextStyle(
+                          color: kTextPrimary, fontSize: 13)),
+                  subtitle: Text('${t.items.length} items',
+                      style: const TextStyle(
+                          color: kTextSecondary, fontSize: 11)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.play_circle_outline,
+                            color: kNeonYellow, size: 22),
+                        onPressed: () {
+                          ref
+                              .read(foodLogProvider.notifier)
+                              .applyTemplate(t, meal);
+                          Navigator.of(context).pop();
+                        },
+                        tooltip: 'Apply template',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            color: Colors.redAccent, size: 20),
+                        onPressed: () => ref
+                            .read(foodLogProvider.notifier)
+                            .deleteTemplate(t.id),
+                        tooltip: 'Delete template',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )),
+      ],
+    );
+  }
+}
+
+class _BarcodeScannerPage extends StatefulWidget {
+  const _BarcodeScannerPage();
+
+  @override
+  State<_BarcodeScannerPage> createState() => _BarcodeScannerPageState();
+}
+
+class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
+  bool _scanned = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: const Text('Scan Barcode'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Stack(
+        children: [
+          MobileScanner(
+            onDetect: (capture) {
+              if (_scanned) return;
+              final barcode = capture.barcodes.firstOrNull;
+              if (barcode?.rawValue != null) {
+                _scanned = true;
+                Navigator.of(context).pop(barcode!.rawValue);
+              }
+            },
+          ),
+          Center(
+            child: Container(
+              width: 260,
+              height: 160,
+              decoration: BoxDecoration(
+                border: Border.all(color: kNeonYellow, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Text(
+              'Point camera at product barcode',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

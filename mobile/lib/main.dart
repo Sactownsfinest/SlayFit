@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/home_screen.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'providers/auth_provider.dart' show authProvider, AuthStatus;
+import 'services/notification_service.dart';
 
 // SlayFit brand colors
 const kPrimaryDark = Color(0xFF0A0E1A);
@@ -13,7 +15,9 @@ const kNeonYellowDim = Color(0xFFCCE000);
 const kTextPrimary = Color(0xFFFFFFFF);
 const kTextSecondary = Color(0xFF8A9BB8);
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().init();
   runApp(
     const ProviderScope(
       child: SlayFitApp(),
@@ -142,6 +146,7 @@ class SlayFitApp extends ConsumerWidget {
       home: switch (authState.status) {
         AuthStatus.loading => const SplashScreen(),
         AuthStatus.authenticated => const HomeScreen(),
+        AuthStatus.onboarding => const OnboardingScreen(),
         AuthStatus.unauthenticated => const LoginScreen(),
       },
     );

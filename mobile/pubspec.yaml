@@ -33,6 +33,13 @@ dependencies:
   # Utilities
   logger: ^2.0.0
 
+  # Barcode Scanner
+  mobile_scanner: ^5.2.3
+
+  # Push Notifications
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
 dependency_overrides:
   # Force older iOS platform packages to avoid objective_c >=6.x build hook
   # that fails on Windows paths with spaces (C:\Users\Dan Maeon\...)
