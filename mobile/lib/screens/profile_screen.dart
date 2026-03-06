@@ -9,6 +9,16 @@ import '../providers/food_provider.dart';
 import '../providers/streak_provider.dart';
 import '../providers/water_provider.dart';
 import '../services/notification_service.dart';
+import '../providers/health_provider.dart';
+
+String _fmtWeight(double kg, bool metric) =>
+    metric ? '${kg.toStringAsFixed(1)} kg' : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
+
+String _fmtHeight(double cm, bool metric) {
+  if (metric) return '${cm.toStringAsFixed(0)} cm';
+  final totalIn = (cm / 2.54).round();
+  return "${totalIn ~/ 12}' ${totalIn % 12}\"";
+}
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -19,6 +29,7 @@ class ProfileScreen extends ConsumerWidget {
     final weight = ref.watch(weightProvider);
     final streak = ref.watch(streakProvider);
     final water = ref.watch(waterProvider);
+    final health = ref.watch(healthProvider);
 
     final initials = profile.name.trim().isNotEmpty
         ? profile.name.trim().split(' ').map((w) => w[0]).take(2).join().toUpperCase()
@@ -83,7 +94,7 @@ class ProfileScreen extends ConsumerWidget {
                     child: _StatCard(
                       label: 'Current',
                       value: weight.latest != null
-                          ? '${weight.latest!.weightKg.toStringAsFixed(1)} kg'
+                          ? _fmtWeight(weight.latest!.weightKg, profile.useMetric)
                           : '—',
                       color: kNeonYellow,
                     ),
@@ -92,7 +103,7 @@ class ProfileScreen extends ConsumerWidget {
                   Expanded(
                     child: _StatCard(
                       label: 'Goal',
-                      value: '${profile.goalWeightKg.toStringAsFixed(1)} kg',
+                      value: _fmtWeight(profile.goalWeightKg, profile.useMetric),
                       color: Colors.greenAccent,
                     ),
                   ),
@@ -122,7 +133,7 @@ class ProfileScreen extends ConsumerWidget {
                 _SettingsRow(
                   icon: Icons.flag_outlined,
                   label: 'Target Weight',
-                  value: '${profile.goalWeightKg.toStringAsFixed(1)} kg',
+                  value: _fmtWeight(profile.goalWeightKg, profile.useMetric),
                   onTap: () => _editGoalWeight(context, ref, profile),
                 ),
               ]),
@@ -133,9 +144,18 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 8),
               _SettingsCard(children: [
                 _SettingsRow(
+                  icon: Icons.swap_horiz_outlined,
+                  label: 'Units',
+                  value: profile.useMetric ? 'kg / cm' : 'lbs / ft·in',
+                  onTap: () => ref.read(userProfileProvider.notifier).update(
+                        profile.copyWith(useMetric: !profile.useMetric),
+                      ),
+                ),
+                _Divider(),
+                _SettingsRow(
                   icon: Icons.straighten_outlined,
                   label: 'Height',
-                  value: '${profile.heightCm.toStringAsFixed(0)} cm',
+                  value: _fmtHeight(profile.heightCm, profile.useMetric),
                   onTap: () => _editHeight(context, ref, profile),
                 ),
                 _Divider(),
@@ -236,6 +256,12 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
 
+              // Health Connect
+              _SectionHeader('HEALTH CONNECT'),
+              const SizedBox(height: 8),
+              _HealthConnectCard(health: health),
+              const SizedBox(height: 20),
+
               // Reminders
               _SectionHeader('REMINDERS'),
               const SizedBox(height: 8),
@@ -249,7 +275,7 @@ class ProfileScreen extends ConsumerWidget {
                 _SettingsRow(
                   icon: Icons.water_drop_outlined,
                   label: 'Daily Water Goal',
-                  value: '${water.dailyGoalMl} ml',
+                  value: '${(water.dailyGoalMl / 29.5735).round()} oz',
                   onTap: () => _editWaterGoal(context, ref, water.dailyGoalMl),
                 ),
               ]),
@@ -310,55 +336,124 @@ class ProfileScreen extends ConsumerWidget {
 
   void _editGoalWeight(
       BuildContext context, WidgetRef ref, UserProfile profile) {
-    final controller =
-        TextEditingController(text: profile.goalWeightKg.toStringAsFixed(1));
+    final metric = profile.useMetric;
+    final displayVal = metric
+        ? profile.goalWeightKg.toStringAsFixed(1)
+        : (profile.goalWeightKg * 2.20462).toStringAsFixed(1);
+    final controller = TextEditingController(text: displayVal);
     _showEditDialog(
       context: context,
       title: 'Target Weight',
       child: TextField(
         controller: controller,
-        keyboardType:
-            const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
         style: const TextStyle(color: kTextPrimary, fontSize: 24),
         textAlign: TextAlign.center,
-        decoration: const InputDecoration(suffixText: 'kg'),
+        decoration: InputDecoration(suffixText: metric ? 'kg' : 'lbs'),
         autofocus: true,
       ),
       onSave: () {
         final val = double.tryParse(controller.text);
         if (val != null && val > 0) {
+          final kg = metric ? val : val / 2.20462;
           ref.read(userProfileProvider.notifier).update(
-                profile.copyWith(goalWeightKg: val),
+                profile.copyWith(goalWeightKg: kg),
               );
-          ref.read(weightProvider.notifier).setGoal(val);
+          ref.read(weightProvider.notifier).setGoal(kg);
         }
       },
     );
   }
 
   void _editHeight(BuildContext context, WidgetRef ref, UserProfile profile) {
-    final controller =
-        TextEditingController(text: profile.heightCm.toStringAsFixed(0));
-    _showEditDialog(
-      context: context,
-      title: 'Height',
-      child: TextField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        style: const TextStyle(color: kTextPrimary, fontSize: 24),
-        textAlign: TextAlign.center,
-        decoration: const InputDecoration(suffixText: 'cm'),
-        autofocus: true,
-      ),
-      onSave: () {
-        final val = double.tryParse(controller.text);
-        if (val != null && val > 0) {
-          ref.read(userProfileProvider.notifier).update(
-                profile.copyWith(heightCm: val),
-              );
-        }
-      },
-    );
+    if (profile.useMetric) {
+      final controller =
+          TextEditingController(text: profile.heightCm.toStringAsFixed(0));
+      _showEditDialog(
+        context: context,
+        title: 'Height',
+        child: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: kTextPrimary, fontSize: 24),
+          textAlign: TextAlign.center,
+          decoration: const InputDecoration(suffixText: 'cm'),
+          autofocus: true,
+        ),
+        onSave: () {
+          final val = double.tryParse(controller.text);
+          if (val != null && val > 0) {
+            ref.read(userProfileProvider.notifier).update(
+                  profile.copyWith(heightCm: val),
+                );
+          }
+        },
+      );
+    } else {
+      final totalIn = (profile.heightCm / 2.54).round();
+      final feetCtrl =
+          TextEditingController(text: (totalIn ~/ 12).toString());
+      final inchesCtrl =
+          TextEditingController(text: (totalIn % 12).toString());
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: kSurfaceDark,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          title: const Text('Height',
+              style: TextStyle(
+                  color: kTextPrimary, fontWeight: FontWeight.bold)),
+          content: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: feetCtrl,
+                  keyboardType: TextInputType.number,
+                  style:
+                      const TextStyle(color: kTextPrimary, fontSize: 24),
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(suffixText: 'ft'),
+                  autofocus: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: inchesCtrl,
+                  keyboardType: TextInputType.number,
+                  style:
+                      const TextStyle(color: kTextPrimary, fontSize: 24),
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(suffixText: 'in'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel',
+                  style: TextStyle(color: kTextSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final ft = int.tryParse(feetCtrl.text) ?? 0;
+                final inch = int.tryParse(inchesCtrl.text) ?? 0;
+                final cm = (ft * 12 + inch) * 2.54;
+                if (cm > 0) {
+                  ref.read(userProfileProvider.notifier).update(
+                        profile.copyWith(heightCm: cm),
+                      );
+                }
+                Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _editSex(BuildContext context, WidgetRef ref, UserProfile profile) {
@@ -497,7 +592,8 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   void _editWaterGoal(BuildContext context, WidgetRef ref, int currentGoal) {
-    final controller = TextEditingController(text: currentGoal.toString());
+    final ozVal = (currentGoal / 29.5735).round();
+    final controller = TextEditingController(text: ozVal.toString());
     _showEditDialog(
       context: context,
       title: 'Daily Water Goal',
@@ -506,13 +602,13 @@ class ProfileScreen extends ConsumerWidget {
         keyboardType: TextInputType.number,
         style: const TextStyle(color: kTextPrimary, fontSize: 24),
         textAlign: TextAlign.center,
-        decoration: const InputDecoration(suffixText: 'ml'),
+        decoration: const InputDecoration(suffixText: 'oz'),
         autofocus: true,
       ),
       onSave: () {
         final val = int.tryParse(controller.text);
         if (val != null && val > 0) {
-          ref.read(waterProvider.notifier).setGoal(val);
+          ref.read(waterProvider.notifier).setGoal((val * 29.5735).round());
         }
       },
     );
@@ -743,6 +839,118 @@ class _AchievementBadge extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _HealthConnectCard extends ConsumerWidget {
+  final HealthState health;
+  const _HealthConnectCard({required this.health});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connected = health.permissionsGranted;
+    return _SettingsCard(children: [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: connected
+                        ? const Color(0xFF34D399).withValues(alpha: 0.15)
+                        : const Color(0xFF2A3550),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    connected ? Icons.check_circle_outline : Icons.link_outlined,
+                    color: connected ? const Color(0xFF34D399) : kTextSecondary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        connected ? 'Connected' : 'Not Connected',
+                        style: TextStyle(
+                          color: connected ? const Color(0xFF34D399) : kTextPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        connected
+                            ? 'Syncing steps & weight from Health Connect'
+                            : 'Sync Fitbit, Garmin, smart scales & more',
+                        style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (connected && health.todaySteps != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'Today: ${health.todaySteps} steps'
+                  '${health.latestWeightKg != null ? '  •  Scale: ${health.latestWeightKg!.toStringAsFixed(1)} kg' : ''}',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                ),
+              ),
+            Row(
+              children: [
+                if (!connected)
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: health.isLoading
+                          ? null
+                          : () => ref.read(healthProvider.notifier).requestPermissions(),
+                      icon: health.isLoading
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                            )
+                          : const Icon(Icons.link, size: 16),
+                      label: const Text('Connect Health Data'),
+                    ),
+                  )
+                else ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => ref.read(healthProvider.notifier).fetchData(),
+                      icon: const Icon(Icons.refresh, size: 16, color: kNeonYellow),
+                      label: const Text('Refresh', style: TextStyle(color: kNeonYellow)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF2A3550)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton(
+                    onPressed: () => ref.read(healthProvider.notifier).disconnect(),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                    ),
+                    child: const Text('Disconnect',
+                        style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    ]);
   }
 }
 

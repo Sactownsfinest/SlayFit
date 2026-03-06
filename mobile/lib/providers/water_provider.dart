@@ -30,7 +30,7 @@ class WaterState {
   final List<WaterEntry> entries;
   final int dailyGoalMl;
 
-  const WaterState({this.entries = const [], this.dailyGoalMl = 2500});
+  const WaterState({this.entries = const [], this.dailyGoalMl = 1893}); // 64 oz default
 
   List<WaterEntry> get todayEntries {
     final today = DateTime.now();
@@ -66,7 +66,7 @@ class WaterNotifier extends StateNotifier<WaterState> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final goalMl = prefs.getInt('water_goal_ml') ?? 2500;
+    final goalMl = prefs.getInt('water_goal_ml') ?? 1893; // 64 oz default
     final json = prefs.getString(_todayKey());
     final entries = json != null
         ? (jsonDecode(json) as List)

@@ -316,6 +316,13 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     }
   }
 
+  double _nut(List nutrients, int id) {
+    for (final n in nutrients) {
+      if (n['nutrientId'] == id) return (n['value'] as num?)?.toDouble() ?? 0;
+    }
+    return 0;
+  }
+
   Future<void> _searchFood(String query) async {
     if (query.trim().length < 2) {
       setState(() => _searchResults = []);
@@ -324,35 +331,39 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     setState(() => _isSearching = true);
     try {
       final uri = Uri.parse(
-        'https://world.openfoodfacts.org/cgi/search.pl'
-        '?search_terms=${Uri.encodeComponent(query)}'
-        '&json=1&page_size=8'
-        '&fields=product_name,nutriments',
+        'https://api.nal.usda.gov/fdc/v1/foods/search'
+        '?query=${Uri.encodeComponent(query)}'
+        '&pageSize=10'
+        '&dataType=Survey%20(FNDDS),SR%20Legacy,Foundation'
+        '&api_key=DEMO_KEY',
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 6));
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final products = (data['products'] as List?) ?? [];
+        final foods = (data['foods'] as List?) ?? [];
         setState(() {
-          _searchResults = products
-              .where((p) =>
-                  p['product_name'] != null &&
-                  (p['product_name'] as String).isNotEmpty)
-              .map<Map<String, dynamic>>((p) {
-            final n = (p['nutriments'] as Map?) ?? {};
+          _searchResults = foods
+              .where((f) =>
+                  f['description'] != null &&
+                  (f['description'] as String).isNotEmpty)
+              .map<Map<String, dynamic>>((f) {
+            final nutrients = (f['foodNutrients'] as List?) ?? [];
             return {
-              'name': p['product_name'] as String,
-              'cal': ((n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0) as num)
-                  .toDouble(),
-              'p': ((n['proteins_100g'] ?? 0) as num).toDouble(),
-              'c': ((n['carbohydrates_100g'] ?? 0) as num).toDouble(),
-              'f': ((n['fat_100g'] ?? 0) as num).toDouble(),
+              'name': f['description'] as String,
+              'cal': _nut(nutrients, 1008),   // Energy kcal
+              'p': _nut(nutrients, 1003),     // Protein
+              'c': _nut(nutrients, 1005),     // Carbohydrates
+              'f': _nut(nutrients, 1004),     // Total fat
             };
           }).toList();
         });
       }
-    } catch (_) {
-      // Silently fail on network error
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Search failed — check connection')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }

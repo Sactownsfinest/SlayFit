@@ -7,6 +7,7 @@ import '../providers/weight_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/water_provider.dart';
 import '../providers/streak_provider.dart';
+import '../providers/health_provider.dart';
 import '../main.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -20,6 +21,7 @@ class DashboardScreen extends ConsumerWidget {
     final weight = ref.watch(weightProvider);
     final water = ref.watch(waterProvider);
     final streak = ref.watch(streakProvider);
+    final health = ref.watch(healthProvider);
 
     return CustomScrollView(
       slivers: [
@@ -59,6 +61,8 @@ class DashboardScreen extends ConsumerWidget {
               _MacrosCard(food: food, profile: profile),
               const SizedBox(height: 16),
               _TodayActivityCard(activity: activity),
+              const SizedBox(height: 16),
+              _StepsCard(health: health),
               const SizedBox(height: 16),
               _MealSummaryCard(food: food),
               const SizedBox(height: 80),
@@ -576,7 +580,7 @@ class _WaterCard extends ConsumerWidget {
                           fontSize: 16)),
                 ],
               ),
-              Text('${totalMl}ml / ${goalMl}ml',
+              Text('${(totalMl / 29.5735).round()}oz / ${(goalMl / 29.5735).round()}oz',
                   style: const TextStyle(color: kTextSecondary, fontSize: 12)),
             ],
           ),
@@ -594,11 +598,99 @@ class _WaterCard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _WaterButton(label: '+250ml', amountMl: 250, ref: ref),
-              _WaterButton(label: '+500ml', amountMl: 500, ref: ref),
-              _WaterButton(label: '+750ml', amountMl: 750, ref: ref),
+              _WaterButton(label: '+8 oz', amountMl: 237, ref: ref),
+              _WaterButton(label: '+12 oz', amountMl: 355, ref: ref),
+              _WaterButton(label: '+16 oz', amountMl: 473, ref: ref),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepsCard extends ConsumerWidget {
+  final HealthState health;
+  const _StepsCard({required this.health});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const stepGoal = 10000;
+    final steps = health.todaySteps;
+    final progress = steps != null ? (steps / stepGoal).clamp(0.0, 1.0) : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.directions_walk, color: Color(0xFF34D399), size: 18),
+                  SizedBox(width: 8),
+                  Text('Steps',
+                      style: TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16)),
+                ],
+              ),
+              if (!health.permissionsGranted)
+                GestureDetector(
+                  onTap: () => ref.read(healthProvider.notifier).requestPermissions(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF34D399).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF34D399).withValues(alpha: 0.4)),
+                    ),
+                    child: const Text('Connect',
+                        style: TextStyle(
+                            color: Color(0xFF34D399),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12)),
+                  ),
+                )
+              else
+                Text(
+                  steps != null ? '$steps / $stepGoal' : '— / $stepGoal',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                ),
+            ],
+          ),
+          if (health.permissionsGranted) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: const Color(0xFF2A3550),
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
+                minHeight: 8,
+              ),
+            ),
+            if (health.latestWeightKg != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Scale: ${health.latestWeightKg!.toStringAsFixed(1)} kg',
+                style: const TextStyle(color: kTextSecondary, fontSize: 12),
+              ),
+            ],
+          ] else ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Connect Health Connect to sync steps from Fitbit, Garmin, or your smart scale.',
+              style: TextStyle(color: kTextSecondary, fontSize: 12, height: 1.4),
+            ),
+          ],
         ],
       ),
     );

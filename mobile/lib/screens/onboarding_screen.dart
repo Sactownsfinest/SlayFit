@@ -18,11 +18,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _currentPage = 0;
 
   String _sex = 'M';
-  double _weight = 80;
-  double _height = 170;
-  double _goalWeight = 70;
+  double _weight = 80;    // always kg internally
+  double _height = 170;   // always cm internally
+  double _goalWeight = 70; // always kg internally
   String _pace = 'steady';
   String _activityLevel = 'moderate';
+  bool _useMetric = false; // default to imperial (lbs / ft·in)
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           goalWeightKg: _goalWeight,
           activityLevel: _activityLevel,
           dailyCalorieGoal: calories,
+          useMetric: _useMetric,
         );
     await ref.read(userProfileProvider.notifier).update(profile);
     ref.read(weightProvider.notifier).logWeight(_weight);
@@ -85,13 +87,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             sex: _sex,
             weight: _weight,
             height: _height,
+            useMetric: _useMetric,
             onSexChanged: (v) => setState(() => _sex = v),
             onWeightChanged: (v) => setState(() => _weight = v),
             onHeightChanged: (v) => setState(() => _height = v),
+            onUseMetricChanged: (v) => setState(() => _useMetric = v),
           ),
           _Page3(
             goalWeight: _goalWeight,
             pace: _pace,
+            useMetric: _useMetric,
             onGoalWeightChanged: (v) => setState(() => _goalWeight = v),
             onPaceChanged: (v) => setState(() => _pace = v),
           ),
@@ -264,23 +269,44 @@ class _FeatureRow extends StatelessWidget {
 // ─── Page 2: Body Stats ────────────────────────────────────────────────────────
 class _Page2 extends StatelessWidget {
   final String sex;
-  final double weight;
-  final double height;
+  final double weight;   // always kg
+  final double height;   // always cm
+  final bool useMetric;
   final ValueChanged<String> onSexChanged;
-  final ValueChanged<double> onWeightChanged;
-  final ValueChanged<double> onHeightChanged;
+  final ValueChanged<double> onWeightChanged;   // receives kg
+  final ValueChanged<double> onHeightChanged;   // receives cm
+  final ValueChanged<bool> onUseMetricChanged;
 
   const _Page2({
     required this.sex,
     required this.weight,
     required this.height,
+    required this.useMetric,
     required this.onSexChanged,
     required this.onWeightChanged,
     required this.onHeightChanged,
+    required this.onUseMetricChanged,
   });
+
+  String _fmtHeight(double cm) {
+    final totalIn = (cm / 2.54).round();
+    return "${totalIn ~/ 12}' ${totalIn % 12}\"";
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Weight slider values in display unit
+    final double wVal = useMetric ? weight : weight * 2.20462;
+    final double wMin = useMetric ? 40.0 : 88.0;
+    final double wMax = useMetric ? 200.0 : 441.0;
+    final String wUnit = useMetric ? 'kg' : 'lbs';
+
+    // Height slider in display unit (cm or total inches)
+    final double hVal = useMetric ? height : height / 2.54;
+    final double hMin = useMetric ? 140.0 : 55.0;
+    final double hMax = useMetric ? 220.0 : 87.0;
+    final String? hOverride = useMetric ? null : _fmtHeight(height);
+
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
@@ -296,7 +322,22 @@ class _Page2 extends StatelessWidget {
             const SizedBox(height: 8),
             const Text('We use this to calculate your calorie needs',
                 style: TextStyle(color: kTextSecondary, fontSize: 14)),
-            const SizedBox(height: 32),
+            const SizedBox(height: 20),
+            // Unit toggle
+            Row(
+              children: [
+                const Text('Units',
+                    style: TextStyle(color: kTextSecondary, fontSize: 13)),
+                const Spacer(),
+                _UnitToggle(
+                  leftLabel: 'lbs / ft',
+                  rightLabel: 'kg / cm',
+                  isRight: useMetric,
+                  onChanged: onUseMetricChanged,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             const Text('Sex',
                 style: TextStyle(color: kTextSecondary, fontSize: 13)),
             const SizedBox(height: 10),
@@ -324,22 +365,92 @@ class _Page2 extends StatelessWidget {
             const SizedBox(height: 28),
             _SliderSection(
               label: 'Current Weight',
-              value: weight,
-              unit: 'kg',
-              min: 40,
-              max: 200,
-              onChanged: onWeightChanged,
+              value: wVal,
+              unit: wUnit,
+              min: wMin,
+              max: wMax,
+              displayOverride: null,
+              onChanged: (v) =>
+                  onWeightChanged(useMetric ? v : v / 2.20462),
             ),
             const SizedBox(height: 24),
             _SliderSection(
               label: 'Height',
-              value: height,
-              unit: 'cm',
-              min: 140,
-              max: 220,
-              onChanged: onHeightChanged,
+              value: hVal,
+              unit: useMetric ? 'cm' : '',
+              min: hMin,
+              max: hMax,
+              displayOverride: hOverride,
+              onChanged: (v) =>
+                  onHeightChanged(useMetric ? v : v * 2.54),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnitToggle extends StatelessWidget {
+  final String leftLabel;
+  final String rightLabel;
+  final bool isRight;
+  final ValueChanged<bool> onChanged;
+
+  const _UnitToggle({
+    required this.leftLabel,
+    required this.rightLabel,
+    required this.isRight,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2A3550)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleOption(label: leftLabel, selected: !isRight,
+              onTap: () => onChanged(false)),
+          _ToggleOption(label: rightLabel, selected: isRight,
+              onTap: () => onChanged(true)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleOption extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ToggleOption(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? kNeonYellow : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black : kTextSecondary,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -395,6 +506,7 @@ class _SliderSection extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
+  final String? displayOverride;
 
   const _SliderSection({
     required this.label,
@@ -403,6 +515,7 @@ class _SliderSection extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.displayOverride,
   });
 
   @override
@@ -422,26 +535,36 @@ class _SliderSection extends StatelessWidget {
               Text(label,
                   style: const TextStyle(
                       color: kTextSecondary, fontSize: 13)),
-              RichText(
-                text: TextSpan(children: [
-                  TextSpan(
-                    text: value.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: kNeonYellow,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      fontFamily: 'Poppins',
+              displayOverride != null
+                  ? Text(
+                      displayOverride!,
+                      style: const TextStyle(
+                        color: kNeonYellow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        fontFamily: 'Poppins',
+                      ),
+                    )
+                  : RichText(
+                      text: TextSpan(children: [
+                        TextSpan(
+                          text: value.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: kNeonYellow,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                        TextSpan(
+                          text: ' $unit',
+                          style: const TextStyle(
+                              color: kTextSecondary,
+                              fontSize: 13,
+                              fontFamily: 'Poppins'),
+                        ),
+                      ]),
                     ),
-                  ),
-                  TextSpan(
-                    text: ' $unit',
-                    style: const TextStyle(
-                        color: kTextSecondary,
-                        fontSize: 13,
-                        fontFamily: 'Poppins'),
-                  ),
-                ]),
-              ),
             ],
           ),
           SliderTheme(
@@ -466,20 +589,27 @@ class _SliderSection extends StatelessWidget {
 
 // ─── Page 3: Goal ──────────────────────────────────────────────────────────────
 class _Page3 extends StatelessWidget {
-  final double goalWeight;
+  final double goalWeight;  // always kg
   final String pace;
-  final ValueChanged<double> onGoalWeightChanged;
+  final bool useMetric;
+  final ValueChanged<double> onGoalWeightChanged;  // receives kg
   final ValueChanged<String> onPaceChanged;
 
   const _Page3({
     required this.goalWeight,
     required this.pace,
+    required this.useMetric,
     required this.onGoalWeightChanged,
     required this.onPaceChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final double gVal = useMetric ? goalWeight : goalWeight * 2.20462;
+    final double gMin = useMetric ? 40.0 : 88.0;
+    final double gMax = useMetric ? 180.0 : 397.0;
+    final String gUnit = useMetric ? 'kg' : 'lbs';
+
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
@@ -498,11 +628,12 @@ class _Page3 extends StatelessWidget {
             const SizedBox(height: 32),
             _SliderSection(
               label: 'Goal Weight',
-              value: goalWeight,
-              unit: 'kg',
-              min: 40,
-              max: 180,
-              onChanged: onGoalWeightChanged,
+              value: gVal,
+              unit: gUnit,
+              min: gMin,
+              max: gMax,
+              onChanged: (v) =>
+                  onGoalWeightChanged(useMetric ? v : v / 2.20462),
             ),
             const SizedBox(height: 28),
             const Text('Loss Pace',
@@ -511,21 +642,27 @@ class _Page3 extends StatelessWidget {
             _PaceOption(
               value: 'slow',
               title: 'Slow',
-              subtitle: '0.25 kg/week — Sustainable',
+              subtitle: useMetric
+                  ? '0.25 kg/week — Sustainable'
+                  : '0.5 lbs/week — Sustainable',
               selected: pace,
               onTap: onPaceChanged,
             ),
             _PaceOption(
               value: 'steady',
               title: 'Steady',
-              subtitle: '0.5 kg/week — Recommended',
+              subtitle: useMetric
+                  ? '0.5 kg/week — Recommended'
+                  : '1 lb/week — Recommended',
               selected: pace,
               onTap: onPaceChanged,
             ),
             _PaceOption(
               value: 'aggressive',
               title: 'Aggressive',
-              subtitle: '1 kg/week — Challenging',
+              subtitle: useMetric
+                  ? '1 kg/week — Challenging'
+                  : '2 lbs/week — Challenging',
               selected: pace,
               onTap: onPaceChanged,
             ),
