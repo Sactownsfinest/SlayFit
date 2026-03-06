@@ -6,6 +6,9 @@ import 'screens/onboarding_screen.dart';
 import 'providers/auth_provider.dart' show authProvider, AuthStatus;
 import 'services/notification_service.dart';
 
+// Controls whether the animated splash is still showing after auth resolves
+final _splashDoneProvider = StateProvider<bool>((ref) => false);
+
 // SlayFit brand colors
 const kPrimaryDark = Color(0xFF0A0E1A);
 const kSurfaceDark = Color(0xFF111827);
@@ -31,6 +34,17 @@ class SlayFitApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
+    final splashDone = ref.watch(_splashDoneProvider);
+
+    // Reset splash whenever user authenticates (covers both cold start & sign-in)
+    ref.listen<AuthStatus>(
+      authProvider.select((s) => s.status),
+      (prev, next) {
+        if (next == AuthStatus.authenticated && prev != AuthStatus.loading) {
+          ref.read(_splashDoneProvider.notifier).state = false;
+        }
+      },
+    );
 
     return MaterialApp(
       title: 'SlayFit',
@@ -143,45 +157,126 @@ class SlayFitApp extends ConsumerWidget {
           labelSmall: TextStyle(color: kTextSecondary, fontSize: 11),
         ),
       ),
-      home: switch (authState.status) {
-        AuthStatus.loading => const SplashScreen(),
-        AuthStatus.authenticated => const HomeScreen(),
-        AuthStatus.onboarding => const OnboardingScreen(),
-        AuthStatus.unauthenticated => const LoginScreen(),
-      },
+      home: (!splashDone || authState.status == AuthStatus.loading)
+          ? SplashScreen(
+              onDone: () =>
+                  ref.read(_splashDoneProvider.notifier).state = true,
+            )
+          : switch (authState.status) {
+              AuthStatus.loading => const SizedBox.shrink(),
+              AuthStatus.authenticated => const HomeScreen(),
+              AuthStatus.onboarding => const OnboardingScreen(),
+              AuthStatus.unauthenticated => const LoginScreen(),
+            },
     );
   }
 }
 
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+class SplashScreen extends StatefulWidget {
+  final VoidCallback? onDone;
+  const SplashScreen({Key? key, this.onDone}) : super(key: key);
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _fade;
+  late Animation<double> _scale;
+  int _affirmIdx = 0;
+
+  static const _affirmations = [
+    'You are stronger than you think.',
+    'Every rep counts. Every step matters.',
+    'Progress, not perfection.',
+    'You showed up. That\'s already a win.',
+    'Small habits lead to big results.',
+    'Your only competition is yesterday\'s you.',
+    'Consistency beats intensity every time.',
+    'Fuel your body. Trust the process.',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _affirmIdx = DateTime.now().day % _affirmations.length;
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
+    _scale = Tween<double>(begin: 0.82, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
+    _ctrl.forward();
+
+    // Minimum display time of 2.5 seconds
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (mounted) widget.onDone?.call();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: kPrimaryDark,
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.bolt, size: 80, color: kNeonYellow),
-            SizedBox(height: 16),
-            Text(
-              'SLAYFIT',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: kTextPrimary,
-                letterSpacing: 4,
-              ),
+        child: FadeTransition(
+          opacity: _fade,
+          child: ScaleTransition(
+            scale: _scale,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    color: kNeonYellow,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Icon(Icons.bolt, size: 56, color: Colors.black),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'SLAYFIT',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: kTextPrimary,
+                    letterSpacing: 5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Your Weight Loss Journey',
+                  style: TextStyle(color: kTextSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 48),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: Text(
+                    '\u201c${_affirmations[_affirmIdx]}\u201d',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: kNeonYellow,
+                      fontSize: 15,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: 8),
-            Text(
-              'Your Weight Loss Journey',
-              style: TextStyle(color: kTextSecondary, fontSize: 14),
-            ),
-          ],
+          ),
         ),
       ),
     );

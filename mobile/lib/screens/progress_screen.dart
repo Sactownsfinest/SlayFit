@@ -7,6 +7,7 @@ import '../providers/weight_provider.dart';
 import '../providers/food_provider.dart';
 import '../providers/activity_provider.dart';
 import '../providers/user_provider.dart';
+import '../providers/water_provider.dart';
 import '../main.dart';
 
 class ProgressScreen extends ConsumerWidget {
@@ -45,21 +46,23 @@ class ProgressScreen extends ConsumerWidget {
   }
 }
 
-class _WeightStatsRow extends StatelessWidget {
+class _WeightStatsRow extends ConsumerWidget {
   final WeightState weight;
   const _WeightStatsRow({required this.weight});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final metric = ref.watch(userProfileProvider).useMetric;
     final lost = weight.totalLost;
+    String fmt(double kg) => metric
+        ? '${kg.toStringAsFixed(1)} kg'
+        : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
     return Row(
       children: [
         Expanded(
           child: _StatTile(
             label: 'Current',
-            value: weight.latest != null
-                ? '${weight.latest!.weightKg.toStringAsFixed(1)} kg'
-                : '—',
+            value: weight.latest != null ? fmt(weight.latest!.weightKg) : '—',
             color: kNeonYellow,
           ),
         ),
@@ -67,9 +70,7 @@ class _WeightStatsRow extends StatelessWidget {
         Expanded(
           child: _StatTile(
             label: 'Start',
-            value: weight.startWeight != null
-                ? '${weight.startWeight!.toStringAsFixed(1)} kg'
-                : '—',
+            value: weight.startWeight != null ? fmt(weight.startWeight!) : '—',
             color: kTextSecondary,
           ),
         ),
@@ -77,9 +78,7 @@ class _WeightStatsRow extends StatelessWidget {
         Expanded(
           child: _StatTile(
             label: 'Lost',
-            value: lost != null
-                ? '${lost.toStringAsFixed(1)} kg'
-                : '—',
+            value: lost != null ? fmt(lost.abs()) : '—',
             color: Colors.greenAccent,
           ),
         ),
@@ -252,21 +251,31 @@ class _LogWeightButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    final metric = profile.useMetric;
+    final latestDisplay = weight.latest != null
+        ? metric
+            ? '${weight.latest!.weightKg.toStringAsFixed(1)} kg'
+            : '${(weight.latest!.weightKg * 2.20462).toStringAsFixed(1)} lbs'
+        : null;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
         icon: const Icon(Icons.add, size: 18),
-        label: Text(weight.latest != null
-            ? 'Update Weight (${weight.latest!.weightKg.toStringAsFixed(1)} kg)'
+        label: Text(latestDisplay != null
+            ? 'Update Weight ($latestDisplay)'
             : 'Log Your Weight'),
-        onPressed: () => _showLogDialog(context, ref),
+        onPressed: () => _showLogDialog(context, ref, metric),
       ),
     );
   }
 
-  void _showLogDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController(
-        text: weight.latest?.weightKg.toStringAsFixed(1) ?? '');
+  void _showLogDialog(BuildContext context, WidgetRef ref, bool metric) {
+    final current = weight.latest?.weightKg;
+    final displayVal = current != null
+        ? (metric ? current.toStringAsFixed(1) : (current * 2.20462).toStringAsFixed(1))
+        : '';
+    final controller = TextEditingController(text: displayVal);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -279,23 +288,25 @@ class _LogWeightButton extends ConsumerWidget {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: const TextStyle(color: kTextPrimary, fontSize: 24),
           textAlign: TextAlign.center,
-          decoration: const InputDecoration(
-            suffixText: 'kg',
-            suffixStyle: TextStyle(color: kTextSecondary),
+          decoration: InputDecoration(
+            suffixText: metric ? 'kg' : 'lbs',
+            suffixStyle: const TextStyle(color: kTextSecondary),
           ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: kTextSecondary)),
+            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
               final val = double.tryParse(controller.text);
               if (val != null && val > 0) {
-                ref.read(weightProvider.notifier).logWeight(val);
+                final kg = metric ? val : val / 2.20462;
+                ref.read(weightProvider.notifier).logWeight(kg);
+                // Auto water goal: 35 ml per kg body weight
+                ref.read(waterProvider.notifier).setGoal((kg * 35).round());
               }
               Navigator.pop(ctx);
             },

@@ -252,14 +252,48 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
   final _proteinController = TextEditingController();
   final _carbsController = TextEditingController();
   final _fatController = TextEditingController();
-  final _servingController = TextEditingController(text: '100');
+  final _servingController = TextEditingController(text: '1');
   final _searchController = TextEditingController();
+
+  // Base macros for 1 serving — recalculated when serving count changes
+  double _baseCal = 0, _baseProt = 0, _baseCarbs = 0, _baseFat = 0;
 
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
 
   @override
+  void initState() {
+    super.initState();
+    _servingController.addListener(_onServingChanged);
+  }
+
+  void _onServingChanged() {
+    if (_baseCal == 0) return;
+    final servings = double.tryParse(_servingController.text) ?? 1;
+    if (servings <= 0) return;
+    _caloriesController.text = ((_baseCal * servings) * 10).roundToDouble() / 10 == (_baseCal * servings).roundToDouble()
+        ? (_baseCal * servings).toStringAsFixed(0)
+        : (_baseCal * servings).toStringAsFixed(1);
+    _proteinController.text = (_baseProt * servings).toStringAsFixed(1);
+    _carbsController.text = (_baseCarbs * servings).toStringAsFixed(1);
+    _fatController.text = (_baseFat * servings).toStringAsFixed(1);
+  }
+
+  void _setBaseValues(double cal, double prot, double carbs, double fat) {
+    _baseCal = cal;
+    _baseProt = prot;
+    _baseCarbs = carbs;
+    _baseFat = fat;
+    _caloriesController.text = cal.toStringAsFixed(0);
+    _proteinController.text = prot.toStringAsFixed(1);
+    _carbsController.text = carbs.toStringAsFixed(1);
+    _fatController.text = fat.toStringAsFixed(1);
+    _servingController.text = '1';
+  }
+
+  @override
   void dispose() {
+    _servingController.removeListener(_onServingChanged);
     _nameController.dispose();
     _caloriesController.dispose();
     _proteinController.dispose();
@@ -286,16 +320,13 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
           final product = data['product'] as Map<String, dynamic>;
           final n = (product['nutriments'] as Map?) ?? {};
           _nameController.text = product['product_name'] ?? 'Unknown';
-          _caloriesController.text =
-              ((n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0) as num)
-                  .toStringAsFixed(0);
-          _proteinController.text =
-              ((n['proteins_100g'] ?? 0) as num).toStringAsFixed(1);
-          _carbsController.text =
-              ((n['carbohydrates_100g'] ?? 0) as num).toStringAsFixed(1);
-          _fatController.text =
-              ((n['fat_100g'] ?? 0) as num).toStringAsFixed(1);
-          _servingController.text = '100';
+          // Use per-serving values if available, otherwise per-100g
+          final hasSrv = n.containsKey('energy-kcal_serving');
+          final cal = ((hasSrv ? n['energy-kcal_serving'] : n['energy-kcal_100g']) ?? n['energy-kcal'] ?? 0 as num).toDouble();
+          final prot = ((hasSrv ? n['proteins_serving'] : n['proteins_100g']) ?? 0 as num).toDouble();
+          final carbs = ((hasSrv ? n['carbohydrates_serving'] : n['carbohydrates_100g']) ?? 0 as num).toDouble();
+          final fat = ((hasSrv ? n['fat_serving'] : n['fat_100g']) ?? 0 as num).toDouble();
+          _setBaseValues(cal, prot, carbs, fat);
           setState(() {});
         } else {
           if (mounted) {
@@ -316,13 +347,6 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     }
   }
 
-  double _nut(List nutrients, int id) {
-    for (final n in nutrients) {
-      if (n['nutrientId'] == id) return (n['value'] as num?)?.toDouble() ?? 0;
-    }
-    return 0;
-  }
-
   Future<void> _searchFood(String query) async {
     if (query.trim().length < 2) {
       setState(() => _searchResults = []);
@@ -331,31 +355,36 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     setState(() => _isSearching = true);
     try {
       final uri = Uri.parse(
-        'https://api.nal.usda.gov/fdc/v1/foods/search'
-        '?query=${Uri.encodeComponent(query)}'
-        '&pageSize=10'
-        '&dataType=Survey%20(FNDDS),SR%20Legacy,Foundation'
-        '&api_key=DEMO_KEY',
+        'https://world.openfoodfacts.org/cgi/search.pl'
+        '?search_terms=${Uri.encodeComponent(query)}'
+        '&search_simple=1'
+        '&json=1'
+        '&page_size=20'
+        '&sort_by=popularity_key'
+        '&fields=product_name,nutriments',
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final foods = (data['foods'] as List?) ?? [];
+        final products = (data['products'] as List?) ?? [];
         setState(() {
-          _searchResults = foods
-              .where((f) =>
-                  f['description'] != null &&
-                  (f['description'] as String).isNotEmpty)
-              .map<Map<String, dynamic>>((f) {
-            final nutrients = (f['foodNutrients'] as List?) ?? [];
+          _searchResults = products
+              .where((p) =>
+                  p['product_name'] != null &&
+                  (p['product_name'] as String).isNotEmpty)
+              .map<Map<String, dynamic>>((p) {
+            final n = (p['nutriments'] as Map?) ?? {};
             return {
-              'name': f['description'] as String,
-              'cal': _nut(nutrients, 1008),   // Energy kcal
-              'p': _nut(nutrients, 1003),     // Protein
-              'c': _nut(nutrients, 1005),     // Carbohydrates
-              'f': _nut(nutrients, 1004),     // Total fat
+              'name': p['product_name'] as String,
+              'cal': ((n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0) as num).toDouble(),
+              'p': ((n['proteins_100g'] ?? 0) as num).toDouble(),
+              'c': ((n['carbohydrates_100g'] ?? 0) as num).toDouble(),
+              'f': ((n['fat_100g'] ?? 0) as num).toDouble(),
             };
-          }).toList();
+          })
+              .where((p) => (p['cal'] as double) > 0)
+              .take(10)
+              .toList();
         });
       }
     } catch (e) {
@@ -383,11 +412,12 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
 
   void _fillQuickFood(Map<String, dynamic> food) {
     _nameController.text = food['name'] as String;
-    _caloriesController.text = food['cal'].toString();
-    _proteinController.text = food['p'].toString();
-    _carbsController.text = food['c'].toString();
-    _fatController.text = food['f'].toString();
-    _servingController.text = '1';
+    _setBaseValues(
+      (food['cal'] as num).toDouble(),
+      (food['p'] as num).toDouble(),
+      (food['c'] as num).toDouble(),
+      (food['f'] as num).toDouble(),
+    );
     setState(() {});
   }
 
@@ -508,15 +538,12 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                     return InkWell(
                       onTap: () {
                         _nameController.text = food['name'] as String;
-                        _caloriesController.text =
-                            (food['cal'] as double).toStringAsFixed(0);
-                        _proteinController.text =
-                            (food['p'] as double).toStringAsFixed(1);
-                        _carbsController.text =
-                            (food['c'] as double).toStringAsFixed(1);
-                        _fatController.text =
-                            (food['f'] as double).toStringAsFixed(1);
-                        _servingController.text = '100';
+                        _setBaseValues(
+                          food['cal'] as double,
+                          food['p'] as double,
+                          food['c'] as double,
+                          food['f'] as double,
+                        );
                         _searchController.clear();
                         setState(() => _searchResults = []);
                       },
@@ -535,7 +562,7 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                               ),
                             ),
                             Text(
-                              '${(food['cal'] as double).toStringAsFixed(0)} kcal/100g',
+                              '${(food['cal'] as double).toStringAsFixed(0)} kcal/srv',
                               style: const TextStyle(
                                   color: kNeonYellow,
                                   fontSize: 11,

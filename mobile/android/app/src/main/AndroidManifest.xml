@@ -47,6 +47,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Health Connect permission activity -->
+        <activity
+            android:name="androidx.health.connect.client.PermissionController"
+            android:exported="false"/>
+
         <!-- flutter_local_notifications receivers -->
         <receiver android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>

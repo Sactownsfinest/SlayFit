@@ -50,31 +50,55 @@ class ProfileScreen extends ConsumerWidget {
               Center(
                 child: Column(
                   children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: kNeonYellow,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          initials,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 28,
+                    GestureDetector(
+                      onTap: () => _editProfile(context, ref, profile),
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: kNeonYellow,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                initials,
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 28,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: kSurfaceDark,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: kNeonYellow, width: 1.5),
+                              ),
+                              child: const Icon(Icons.edit, size: 12, color: kNeonYellow),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      profile.name,
-                      style: const TextStyle(
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                    GestureDetector(
+                      onTap: () => _editProfile(context, ref, profile),
+                      child: Text(
+                        profile.name,
+                        style: const TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -150,6 +174,15 @@ class ProfileScreen extends ConsumerWidget {
                   onTap: () => ref.read(userProfileProvider.notifier).update(
                         profile.copyWith(useMetric: !profile.useMetric),
                       ),
+                ),
+                _Divider(),
+                _SettingsRow(
+                  icon: Icons.monitor_weight_outlined,
+                  label: 'Current Weight',
+                  value: weight.latest != null
+                      ? _fmtWeight(weight.latest!.weightKg, profile.useMetric)
+                      : 'Not set',
+                  onTap: () => _editCurrentWeight(context, ref, profile, weight),
                 ),
                 _Divider(),
                 _SettingsRow(
@@ -304,6 +337,97 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  void _editProfile(BuildContext context, WidgetRef ref, UserProfile profile) {
+    final nameCtrl = TextEditingController(text: profile.name);
+    final emailCtrl = TextEditingController(text: profile.email);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Edit Profile',
+            style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              style: const TextStyle(color: kTextPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                prefixIcon: Icon(Icons.person_outline, color: kTextSecondary),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailCtrl,
+              style: const TextStyle(color: kTextPrimary),
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_outlined, color: kTextSecondary),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              final email = emailCtrl.text.trim();
+              if (name.isNotEmpty) {
+                final updated = profile.copyWith(name: name, email: email);
+                ref.read(userProfileProvider.notifier).update(updated);
+                // Keep legacy separate keys in sync
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('user_name', name);
+                await prefs.setString('user_email', email);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editCurrentWeight(
+      BuildContext context, WidgetRef ref, UserProfile profile, WeightState weight) {
+    final metric = profile.useMetric;
+    final current = weight.latest?.weightKg;
+    final displayVal = current != null
+        ? (metric ? current.toStringAsFixed(1) : (current * 2.20462).toStringAsFixed(1))
+        : '';
+    final controller = TextEditingController(text: displayVal);
+    _showEditDialog(
+      context: context,
+      title: 'Current Weight',
+      child: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(color: kTextPrimary, fontSize: 24),
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(suffixText: metric ? 'kg' : 'lbs'),
+        autofocus: true,
+      ),
+      onSave: () {
+        final val = double.tryParse(controller.text);
+        if (val != null && val > 0) {
+          final kg = metric ? val : val / 2.20462;
+          ref.read(weightProvider.notifier).logWeight(kg);
+          // Auto water goal: 35 ml per kg body weight
+          ref.read(waterProvider.notifier).setGoal((kg * 35).round());
+        }
+      },
     );
   }
 

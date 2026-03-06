@@ -43,6 +43,9 @@ dependencies:
   # Health Connect (steps + smart scale weight)
   health: ^11.0.0
 
+  # Sharing
+  share_plus: ^10.0.0
+
 dependency_overrides:
   # Force older iOS platform packages to avoid objective_c >=6.x build hook
   # that fails on Windows paths with spaces (C:\Users\Dan Maeon\...)
