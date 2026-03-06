@@ -4,6 +4,7 @@ import 'profile_screen.dart';
 import 'food_log_screen.dart';
 import 'progress_screen.dart';
 import 'activity_screen.dart';
+import 'ai_coach_screen.dart';
 import '../main.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ActivityScreen(),
     ProgressScreen(),
     ProfileScreen(),
+    AiCoachScreen(),
   ];
 
   @override
@@ -79,6 +81,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   activeIcon: Icons.person,
                   label: 'Profile',
                   index: 4,
+                  selected: _selectedIndex,
+                  onTap: (i) => setState(() => _selectedIndex = i),
+                ),
+                _NavItem(
+                  icon: Icons.psychology_outlined,
+                  activeIcon: Icons.psychology,
+                  label: 'Coach',
+                  index: 5,
                   selected: _selectedIndex,
                   onTap: (i) => setState(() => _selectedIndex = i),
                 ),
