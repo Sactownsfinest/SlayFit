@@ -7,12 +7,14 @@ class HealthState {
   final int? todaySteps;
   final double? latestWeightKg;
   final bool isLoading;
+  final String? errorMessage;
 
   const HealthState({
     this.permissionsGranted = false,
     this.todaySteps,
     this.latestWeightKg,
     this.isLoading = false,
+    this.errorMessage,
   });
 
   HealthState copyWith({
@@ -20,12 +22,15 @@ class HealthState {
     int? todaySteps,
     double? latestWeightKg,
     bool? isLoading,
+    String? errorMessage,
+    bool clearError = false,
   }) =>
       HealthState(
         permissionsGranted: permissionsGranted ?? this.permissionsGranted,
         todaySteps: todaySteps ?? this.todaySteps,
         latestWeightKg: latestWeightKg ?? this.latestWeightKg,
         isLoading: isLoading ?? this.isLoading,
+        errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       );
 }
 
@@ -47,7 +52,7 @@ class HealthNotifier extends StateNotifier<HealthState> {
   }
 
   Future<bool> requestPermissions() async {
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final health = Health();
       await health.configure();
@@ -59,14 +64,23 @@ class HealthNotifier extends StateNotifier<HealthState> {
         await fetchData();
         return true;
       }
-    } catch (_) {}
-    state = state.copyWith(isLoading: false);
+      // User denied permissions in the dialog
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Health Connect permissions were denied. Please allow steps and weight access.',
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Could not connect to Health Connect: ${e.toString()}',
+      );
+    }
     return false;
   }
 
   Future<void> fetchData() async {
     if (!state.permissionsGranted) return;
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final health = Health();
       final now = DateTime.now();
@@ -95,8 +109,11 @@ class HealthNotifier extends StateNotifier<HealthState> {
         latestWeightKg: latestKg ?? state.latestWeightKg,
         isLoading: false,
       );
-    } catch (_) {
-      state = state.copyWith(isLoading: false);
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Failed to read health data: ${e.toString()}',
+      );
     }
   }
 

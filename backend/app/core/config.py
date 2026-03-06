@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     
+    # Anthropic AI Coach
+    ANTHROPIC_API_KEY: Optional[str] = None
+
     # API Keys for integrations
     EDAMAM_API_ID: Optional[str] = None
     EDAMAM_API_KEY: Optional[str] = None

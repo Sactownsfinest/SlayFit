@@ -20,21 +20,14 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen> {
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
   bool _loading = false;
-  bool _hasApiKey = false;
   bool _tipRequested = false;
 
   @override
   void initState() {
     super.initState();
-    _checkApiKey();
-  }
-
-  Future<void> _checkApiKey() async {
-    final key = await ClaudeService.getApiKey();
-    if (mounted) setState(() => _hasApiKey = key != null);
-    if (_hasApiKey && !_tipRequested) {
+    if (!_tipRequested) {
       _tipRequested = true;
-      _requestDailyTip();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _requestDailyTip());
     }
   }
 
@@ -148,59 +141,7 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen> {
           ],
         ),
       ),
-      body: !_hasApiKey ? _buildNoKeyCard() : _buildChat(),
-    );
-  }
-
-  Widget _buildNoKeyCard() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: kCardDark,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.psychology, color: kNeonYellow, size: 48),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Meet Slay, Your AI Coach',
-                    style: TextStyle(
-                      color: kTextPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Get personalized fitness advice based on your actual daily data — calories, water, streaks, and weight progress.',
-                    style: TextStyle(color: kTextSecondary, fontSize: 13),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'To activate: go to Profile → AI Coach → Enter your Claude API key.',
-                    style: TextStyle(color: kTextSecondary, fontSize: 12),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _checkApiKey,
-                    child: const Text('I\'ve Added My Key'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: _buildChat(),
     );
   }
 

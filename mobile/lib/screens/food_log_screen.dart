@@ -355,15 +355,15 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     setState(() => _isSearching = true);
     try {
       final uri = Uri.parse(
-        'https://world.openfoodfacts.org/cgi/search.pl'
+        'https://world.openfoodfacts.org/api/v2/search'
         '?search_terms=${Uri.encodeComponent(query)}'
-        '&search_simple=1'
-        '&json=1'
+        '&fields=product_name,nutriments'
         '&page_size=20'
-        '&sort_by=popularity_key'
-        '&fields=product_name,nutriments',
+        '&sort_by=popularity_key',
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'SlayFit/1.0 (Flutter; contact@slayfit.app)',
+      }).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final products = (data['products'] as List?) ?? [];

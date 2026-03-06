@@ -9,7 +9,6 @@ import '../providers/food_provider.dart';
 import '../providers/streak_provider.dart';
 import '../providers/water_provider.dart';
 import '../services/notification_service.dart';
-import '../services/claude_service.dart';
 import '../providers/health_provider.dart';
 
 String _fmtWeight(double kg, bool metric) =>
@@ -314,12 +313,6 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ]),
               const SizedBox(height: 20),
-
-              // AI Coach
-              _SectionHeader('AI COACH'),
-              const SizedBox(height: 8),
-              const _AiCoachSettingsCard(),
-              const SizedBox(height: 28),
 
               // Sign out
               SizedBox(
@@ -979,6 +972,17 @@ class _HealthConnectCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<HealthState>(healthProvider, (prev, next) {
+      if (next.errorMessage != null && next.errorMessage != prev?.errorMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.errorMessage!),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
     final connected = health.permissionsGranted;
     return _SettingsCard(children: [
       Padding(
@@ -1238,94 +1242,3 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
   }
 }
 
-class _AiCoachSettingsCard extends StatefulWidget {
-  const _AiCoachSettingsCard();
-
-  @override
-  State<_AiCoachSettingsCard> createState() => _AiCoachSettingsCardState();
-}
-
-class _AiCoachSettingsCardState extends State<_AiCoachSettingsCard> {
-  bool _hasKey = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadKeyStatus();
-  }
-
-  Future<void> _loadKeyStatus() async {
-    final key = await ClaudeService.getApiKey();
-    if (mounted) setState(() => _hasKey = key != null);
-  }
-
-  void _editApiKey(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceDark,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Claude API Key',
-            style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Get a free key at console.anthropic.com. Your key is stored only on this device.',
-              style: TextStyle(color: kTextSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              obscureText: true,
-              style: const TextStyle(color: kTextPrimary, fontSize: 13),
-              decoration: const InputDecoration(
-                hintText: 'sk-ant-...',
-                labelText: 'API Key',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
-          ),
-          if (_hasKey)
-            TextButton(
-              onPressed: () async {
-                await ClaudeService.saveApiKey('');
-                if (mounted) setState(() => _hasKey = false);
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
-            ),
-          ElevatedButton(
-            onPressed: () async {
-              final key = ctrl.text.trim();
-              if (key.isEmpty) return;
-              await ClaudeService.saveApiKey(key);
-              if (mounted) setState(() => _hasKey = true);
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _SettingsCard(children: [
-      _SettingsRow(
-        icon: Icons.psychology_outlined,
-        label: 'Claude API Key',
-        value: _hasKey ? 'Configured \u2713' : 'Not set',
-        onTap: () => _editApiKey(context),
-      ),
-    ]);
-  }
-}

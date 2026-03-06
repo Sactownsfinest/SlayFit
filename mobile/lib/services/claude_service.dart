@@ -1,21 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ClaudeService {
   static const _apiUrl = 'https://api.anthropic.com/v1/messages';
   static const _model = 'claude-haiku-4-5-20251001';
-
-  static Future<String?> getApiKey() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = prefs.getString('claude_api_key') ?? '';
-    return key.isEmpty ? null : key;
-  }
-
-  static Future<void> saveApiKey(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('claude_api_key', key.trim());
-  }
+  // Built-in API key — users do not need to configure anything.
+  static const _apiKey = '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';
 
   /// Send a chat message with user fitness context injected into the system prompt.
   /// [history] is a list of prior messages: [{'role': 'user'|'assistant', 'content': '...'}]
@@ -27,8 +17,7 @@ class ClaudeService {
     required String userMessage,
     required Map<String, dynamic> context,
   }) async {
-    final apiKey = await getApiKey();
-    if (apiKey == null) throw Exception('no_api_key');
+    const apiKey = _apiKey;
 
     final systemPrompt = _buildSystemPrompt(context);
 
