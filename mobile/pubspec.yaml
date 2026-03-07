@@ -62,6 +62,15 @@ dependencies:
   # Text-to-speech (AI Coach voice output)
   flutter_tts: ^4.0.2
 
+  # Audio playback for guided workout classes
+  audioplayers: ^6.0.0
+
+  # Firebase (community challenges, real-time chat, social)
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_database: ^11.1.4
+
 dependency_overrides:
   # Force older iOS platform packages to avoid objective_c >=6.x build hook
   # that fails on Windows paths with spaces (C:\Users\Dan Maeon\...)
@@ -81,6 +90,7 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/data/
+    - assets/audio/morning_stretch/
 
 
 flutter_launcher_icons:

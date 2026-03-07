@@ -11,9 +11,11 @@ import '../providers/workout_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/weight_provider.dart';
 import '../data/workout_library.dart';
+import '../data/guided_classes.dart';
 import '../services/youtube_service.dart';
 import '../services/workout_ai_service.dart';
 import '../main.dart';
+import 'guided_class_player_screen.dart';
 
 // ── Root Screen ─────────────────────────────────────────────────────────────
 
@@ -151,6 +153,15 @@ class _WorkoutsTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       children: [
+        // ── Guided Classes ──────────────────────────────────────────────────
+        const Text('Guided Classes',
+            style: TextStyle(
+                color: kTextPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
+        const SizedBox(height: 12),
+        ...allGuidedClasses.map((gc) => _GuidedClassCard(guidedClass: gc)),
+        const SizedBox(height: 20),
         // AI Guided Workout
         const _AiGuidedWorkoutCard(),
         // Recent sessions
@@ -267,6 +278,104 @@ class _EmptyWorkoutsState extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Guided Class Card ────────────────────────────────────────────────────────
+
+class _GuidedClassCard extends StatelessWidget {
+  final GuidedClass guidedClass;
+  const _GuidedClassCard({required this.guidedClass});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = guidedClass;
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GuidedClassStartScreen(guidedClass: c),
+        ),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: kCardDark,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: c.color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: c.color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(c.icon, color: c.color, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(c.title,
+                      style: const TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14)),
+                  const SizedBox(height: 3),
+                  Text(c.subtitle,
+                      style: const TextStyle(
+                          color: kTextSecondary, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _MiniChip(Icons.timer_outlined, '${c.totalMinutes} min'),
+                      const SizedBox(width: 6),
+                      _MiniChip(Icons.bar_chart, c.difficulty),
+                      const SizedBox(width: 6),
+                      _MiniChip(Icons.self_improvement, c.category),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.play_circle_filled_rounded,
+                color: c.color, size: 32),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _MiniChip(this.icon, this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: kSurfaceDark,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: kTextSecondary, size: 10),
+          const SizedBox(width: 3),
+          Text(label,
+              style:
+                  const TextStyle(color: kTextSecondary, fontSize: 10)),
+        ],
       ),
     );
   }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1014500968498",
+    "project_id": "slayfit-aac57",
+    "storage_bucket": "slayfit-aac57.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014500968498:android:ab296512a6b8cb5f63942b",
+        "android_client_info": {
+          "package_name": "com.slayfit.slayfit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKOgFyZqjc17U3Uxa2Nw8VLWu0vA4WDdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

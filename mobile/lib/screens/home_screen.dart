@@ -5,6 +5,7 @@ import 'food_log_screen.dart';
 import 'progress_screen.dart';
 import 'activity_screen.dart';
 import 'ai_coach_screen.dart';
+import 'community_screen.dart';
 import '../main.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     FoodLogScreen(),
     ActivityScreen(),
     ProgressScreen(),
+    CommunityScreen(),
     ProfileScreen(),
   ];
 
@@ -62,7 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _NavItem(icon: Icons.restaurant_outlined, activeIcon: Icons.restaurant, label: 'Food', index: 1, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
             _NavItem(icon: Icons.fitness_center_outlined, activeIcon: Icons.fitness_center, label: 'Activity', index: 2, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
             _NavItem(icon: Icons.trending_down_outlined, activeIcon: Icons.trending_down, label: 'Progress', index: 3, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
-            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile', index: 4, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.people_outline, activeIcon: Icons.people, label: 'Community', index: 4, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile', index: 5, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
           ],
         ),
       ),
