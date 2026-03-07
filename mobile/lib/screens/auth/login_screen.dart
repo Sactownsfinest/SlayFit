@@ -41,7 +41,7 @@ class LoginScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Your Weight Loss Journey',
+                    'Move. Sweat. Slay.',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 14,

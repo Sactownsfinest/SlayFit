@@ -9,19 +9,39 @@ import '../providers/food_provider.dart';
 import '../providers/recipe_provider.dart';
 import '../main.dart';
 
-class FoodLogScreen extends ConsumerWidget {
+class FoodLogScreen extends ConsumerStatefulWidget {
   const FoodLogScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FoodLogScreen> createState() => _FoodLogScreenState();
+}
+
+class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final food = ref.watch(foodLogProvider);
 
-    return CustomScrollView(
-      slivers: [
+    return NestedScrollView(
+      headerSliverBuilder: (context, _) => [
         SliverAppBar(
           floating: true,
           snap: true,
-          title: const Text('Food Log'),
+          title: const Text('Food'),
           actions: [
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined, color: kNeonYellow),
@@ -50,44 +70,69 @@ class FoodLogScreen extends ConsumerWidget {
               ),
             ),
           ],
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              const _FavoritesSection(),
-              const SizedBox(height: 12),
-              _MealSection(
-                mealType: MealType.breakfast,
-                icon: Icons.wb_sunny_outlined,
-                color: const Color(0xFFFBBF24),
-                food: food,
-              ),
-              const SizedBox(height: 12),
-              _MealSection(
-                mealType: MealType.lunch,
-                icon: Icons.restaurant,
-                color: Colors.greenAccent,
-                food: food,
-              ),
-              const SizedBox(height: 12),
-              _MealSection(
-                mealType: MealType.dinner,
-                icon: Icons.nights_stay_outlined,
-                color: const Color(0xFF60A5FA),
-                food: food,
-              ),
-              const SizedBox(height: 12),
-              _MealSection(
-                mealType: MealType.snack,
-                icon: Icons.cookie_outlined,
-                color: const Color(0xFFF87171),
-                food: food,
-              ),
-              const SizedBox(height: 20),
-              const _RecipesSection(),
-            ]),
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: kNeonYellow,
+            unselectedLabelColor: kTextSecondary,
+            indicatorColor: kNeonYellow,
+            indicatorSize: TabBarIndicatorSize.label,
+            tabs: const [
+              Tab(text: 'Log'),
+              Tab(text: 'Favorites'),
+              Tab(text: 'Recipes'),
+            ],
           ),
+        ),
+      ],
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _FoodLogTab(food: food),
+          const _FavoritesTab(),
+          const _RecipesTab(),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Food Log Tab ──────────────────────────────────────────────────────────────
+
+class _FoodLogTab extends ConsumerWidget {
+  final FoodLogState food;
+  const _FoodLogTab({required this.food});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+      children: [
+        _MealSection(
+          mealType: MealType.breakfast,
+          icon: Icons.wb_sunny_outlined,
+          color: const Color(0xFFFBBF24),
+          food: food,
+        ),
+        const SizedBox(height: 12),
+        _MealSection(
+          mealType: MealType.lunch,
+          icon: Icons.restaurant,
+          color: Colors.greenAccent,
+          food: food,
+        ),
+        const SizedBox(height: 12),
+        _MealSection(
+          mealType: MealType.dinner,
+          icon: Icons.nights_stay_outlined,
+          color: const Color(0xFF60A5FA),
+          food: food,
+        ),
+        const SizedBox(height: 12),
+        _MealSection(
+          mealType: MealType.snack,
+          icon: Icons.cookie_outlined,
+          color: const Color(0xFFF87171),
+          food: food,
         ),
       ],
     );
@@ -1032,7 +1077,28 @@ class _BarcodeScannerPage extends StatefulWidget {
 }
 
 class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
-  bool _scanned = false;
+  late final MobileScannerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) async {
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode?.rawValue == null) return;
+    await _controller.stop();
+    if (mounted) Navigator.of(context).pop(barcode!.rawValue);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1049,14 +1115,8 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
       body: Stack(
         children: [
           MobileScanner(
-            onDetect: (capture) {
-              if (_scanned) return;
-              final barcode = capture.barcodes.firstOrNull;
-              if (barcode?.rawValue != null) {
-                _scanned = true;
-                Navigator.of(context).pop(barcode!.rawValue);
-              }
-            },
+            controller: _controller,
+            onDetect: _onDetect,
           ),
           Center(
             child: Container(
@@ -1084,16 +1144,16 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
   }
 }
 
-// ── Recipes Section ───────────────────────────────────────────────────────────
+// ── Recipes Tab ───────────────────────────────────────────────────────────────
 
-class _RecipesSection extends ConsumerWidget {
-  const _RecipesSection();
+class _RecipesTab extends ConsumerWidget {
+  const _RecipesTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recipeState = ref.watch(recipeProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1102,7 +1162,7 @@ class _RecipesSection extends ConsumerWidget {
                 style: TextStyle(
                     color: kTextPrimary,
                     fontWeight: FontWeight.bold,
-                    fontSize: 16)),
+                    fontSize: 18)),
             GestureDetector(
               onTap: () => showModalBottomSheet(
                 context: context,
@@ -1119,15 +1179,14 @@ class _RecipesSection extends ConsumerWidget {
                 decoration: BoxDecoration(
                   color: kNeonYellow.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: kNeonYellow.withValues(alpha: 0.3)),
+                  border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.add, color: kNeonYellow, size: 14),
                     SizedBox(width: 4),
-                    Text('Create Recipe',
+                    Text('New Recipe',
                         style: TextStyle(
                             color: kNeonYellow,
                             fontSize: 12,
@@ -1138,30 +1197,33 @@ class _RecipesSection extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         if (recipeState.recipes.isEmpty)
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: kCardDark,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: kNeonYellow.withValues(alpha: 0.15)),
+              border: Border.all(color: kNeonYellow.withValues(alpha: 0.15)),
             ),
-            child: const Row(
+            child: const Column(
               children: [
-                Icon(Icons.menu_book_outlined,
-                    color: kNeonYellow, size: 20),
-                SizedBox(width: 12),
-                Text('Create your first recipe',
-                    style:
-                        TextStyle(color: kTextSecondary, fontSize: 14)),
+                Icon(Icons.menu_book_outlined, color: kNeonYellow, size: 36),
+                SizedBox(height: 12),
+                Text('No recipes yet',
+                    style: TextStyle(
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                SizedBox(height: 4),
+                Text('Tap "New Recipe" to get started',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: kTextSecondary, fontSize: 13)),
               ],
             ),
           )
         else
-          ...recipeState.recipes
-              .map((r) => _RecipeTile(recipe: r, ref: ref)),
+          ...recipeState.recipes.map((r) => _RecipeTile(recipe: r, ref: ref)),
       ],
     );
   }
@@ -1215,6 +1277,20 @@ class _RecipeTile extends StatelessWidget {
                         color: kTextSecondary, fontSize: 11),
                   ),
                 ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  color: kTextSecondary, size: 20),
+              tooltip: 'Edit recipe',
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: kSurfaceDark,
+                shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20))),
+                builder: (_) => _EditRecipeSheet(recipe: recipe, ref: ref),
               ),
             ),
             ElevatedButton(
@@ -1624,45 +1700,405 @@ class _CreateRecipeSheetState extends State<_CreateRecipeSheet> {
   }
 }
 
-// ── Favorites Section ─────────────────────────────────────────────────────────
+// ── Edit Recipe Sheet ─────────────────────────────────────────────────────────
 
-class _FavoritesSection extends ConsumerWidget {
-  const _FavoritesSection();
+class _EditRecipeSheet extends StatefulWidget {
+  final Recipe recipe;
+  final WidgetRef ref;
+  const _EditRecipeSheet({required this.recipe, required this.ref});
+
+  @override
+  State<_EditRecipeSheet> createState() => _EditRecipeSheetState();
+}
+
+class _EditRecipeSheetState extends State<_EditRecipeSheet> {
+  late TextEditingController _nameCtrl;
+  late int _servings;
+  late List<RecipeIngredient> _ingredients;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.recipe.name);
+    _servings = widget.recipe.servings;
+    _ingredients = List.from(widget.recipe.ingredients);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  void _editIngredient(int index) {
+    final ing = _ingredients[index];
+    final nameC = TextEditingController(text: ing.name);
+    final calC = TextEditingController(text: ing.calories.toStringAsFixed(0));
+    final proC = TextEditingController(text: ing.protein.toStringAsFixed(1));
+    final carC = TextEditingController(text: ing.carbs.toStringAsFixed(1));
+    final fatC = TextEditingController(text: ing.fat.toStringAsFixed(1));
+    final amtC = TextEditingController(text: ing.amountG.toStringAsFixed(0));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Edit Ingredient', style: TextStyle(color: kTextPrimary)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ingField('Name', nameC),
+              _ingField('Amount (g)', amtC, type: TextInputType.number),
+              _ingField('Calories', calC, type: TextInputType.number),
+              _ingField('Protein (g)', proC, type: TextInputType.number),
+              _ingField('Carbs (g)', carC, type: TextInputType.number),
+              _ingField('Fat (g)', fatC, type: TextInputType.number),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            onPressed: () {
+              if (nameC.text.trim().isEmpty) return;
+              setState(() {
+                _ingredients[index] = RecipeIngredient(
+                  name: nameC.text.trim(),
+                  calories: double.tryParse(calC.text) ?? 0,
+                  protein: double.tryParse(proC.text) ?? 0,
+                  carbs: double.tryParse(carC.text) ?? 0,
+                  fat: double.tryParse(fatC.text) ?? 0,
+                  amountG: double.tryParse(amtC.text) ?? 100,
+                );
+              });
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addIngredient() {
+    final nameC = TextEditingController();
+    final calC = TextEditingController();
+    final proC = TextEditingController();
+    final carC = TextEditingController();
+    final fatC = TextEditingController();
+    final amtC = TextEditingController(text: '100');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Add Ingredient', style: TextStyle(color: kTextPrimary)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ingField('Name', nameC),
+              _ingField('Amount (g)', amtC, type: TextInputType.number),
+              _ingField('Calories', calC, type: TextInputType.number),
+              _ingField('Protein (g)', proC, type: TextInputType.number),
+              _ingField('Carbs (g)', carC, type: TextInputType.number),
+              _ingField('Fat (g)', fatC, type: TextInputType.number),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            onPressed: () {
+              if (nameC.text.trim().isEmpty) return;
+              setState(() {
+                _ingredients.add(RecipeIngredient(
+                  name: nameC.text.trim(),
+                  calories: double.tryParse(calC.text) ?? 0,
+                  protein: double.tryParse(proC.text) ?? 0,
+                  carbs: double.tryParse(carC.text) ?? 0,
+                  fat: double.tryParse(fatC.text) ?? 0,
+                  amountG: double.tryParse(amtC.text) ?? 100,
+                ));
+              });
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+            child: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ingField(String label, TextEditingController ctrl,
+      {TextInputType type = TextInputType.text}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: ctrl,
+        keyboardType: type,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: kTextSecondary),
+          filled: true,
+          fillColor: kCardDark,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none),
+        ),
+      ),
+    );
+  }
+
+  void _save() {
+    if (_nameCtrl.text.trim().isEmpty || _ingredients.isEmpty) return;
+    widget.ref.read(recipeProvider.notifier).saveRecipe(Recipe(
+      id: widget.recipe.id,
+      name: _nameCtrl.text.trim(),
+      servings: _servings,
+      ingredients: _ingredients,
+    ));
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalCal = _ingredients.fold(0.0, (s, i) => s + i.calories);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (_, controller) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 16),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF2A3550),
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Edit Recipe',
+                      style: TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18)),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: kTextSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                children: [
+                  TextField(
+                    controller: _nameCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Recipe Name',
+                      labelStyle: const TextStyle(color: kTextSecondary),
+                      filled: true,
+                      fillColor: kCardDark,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Text('Servings:', style: TextStyle(color: kTextSecondary)),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => setState(
+                            () => _servings = (_servings - 1).clamp(1, 50)),
+                        icon: const Icon(Icons.remove_circle_outline,
+                            color: kTextSecondary),
+                      ),
+                      Text('$_servings',
+                          style: const TextStyle(
+                              color: kTextPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18)),
+                      IconButton(
+                        onPressed: () => setState(
+                            () => _servings = (_servings + 1).clamp(1, 50)),
+                        icon: const Icon(Icons.add_circle_outline,
+                            color: kNeonYellow),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Ingredients (${_ingredients.length})',
+                          style: const TextStyle(
+                              color: kTextPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15)),
+                      TextButton.icon(
+                        onPressed: _addIngredient,
+                        icon: const Icon(Icons.add, color: kNeonYellow, size: 16),
+                        label: const Text('Add', style: TextStyle(color: kNeonYellow)),
+                      ),
+                    ],
+                  ),
+                  ..._ingredients.asMap().entries.map((e) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(e.value.name,
+                            style: const TextStyle(
+                                color: kTextPrimary, fontSize: 13)),
+                        subtitle: Text(
+                            '${e.value.amountG.toStringAsFixed(0)}g · ${e.value.calories.toInt()} kcal',
+                            style: const TextStyle(
+                                color: kTextSecondary, fontSize: 11)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined,
+                                  color: kTextSecondary, size: 18),
+                              onPressed: () => _editIngredient(e.key),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close,
+                                  color: kTextSecondary, size: 18),
+                              onPressed: () =>
+                                  setState(() => _ingredients.removeAt(e.key)),
+                            ),
+                          ],
+                        ),
+                      )),
+                  if (_ingredients.isNotEmpty) ...[
+                    const Divider(color: Color(0xFF2A3550)),
+                    Text(
+                      'Total: ${totalCal.toInt()} kcal · ${(totalCal / _servings).toInt()} kcal/serving',
+                      style: const TextStyle(
+                          color: kNeonYellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _nameCtrl.text.isNotEmpty && _ingredients.isNotEmpty
+                          ? _save
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kNeonYellow,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Save Changes',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Favorites Tab ─────────────────────────────────────────────────────────────
+
+class _FavoritesTab extends ConsumerWidget {
+  const _FavoritesTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final favorites = ref.watch(favoriteFoodsProvider);
-    if (favorites.isEmpty) return const SizedBox.shrink();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: kCardDark,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.bookmark, color: kNeonYellow, size: 16),
-                const SizedBox(width: 8),
-                const Text('Favorites',
-                    style: TextStyle(
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14)),
-                const Spacer(),
-                Text('${favorites.length}',
-                    style: const TextStyle(color: kTextSecondary, fontSize: 12)),
-              ],
-            ),
+    if (favorites.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.bookmark_border, color: kNeonYellow, size: 48),
+            SizedBox(height: 16),
+            Text('No favorites yet',
+                style: TextStyle(
+                    color: kTextPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16)),
+            SizedBox(height: 6),
+            Text('Tap the bookmark icon on any food entry\nto save it here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: kTextSecondary, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.bookmark, color: kNeonYellow, size: 18),
+            const SizedBox(width: 8),
+            const Text('Favorites',
+                style: TextStyle(
+                    color: kTextPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18)),
+            const Spacer(),
+            Text('${favorites.length} saved',
+                style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: kCardDark,
+            borderRadius: BorderRadius.circular(14),
           ),
-          const Divider(height: 1, color: Color(0xFF2A3550)),
-          ...favorites.map((fav) => _FavoriteTile(fav: fav)),
-        ],
-      ),
+          child: Column(
+            children: favorites
+                .asMap()
+                .entries
+                .map((e) => Column(
+                      children: [
+                        if (e.key > 0)
+                          const Divider(height: 1, color: Color(0xFF2A3550)),
+                        _FavoriteTile(fav: e.value),
+                      ],
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1845,31 +2281,37 @@ class _FoodScanSheetState extends ConsumerState<_FoodScanSheet> {
     try {
       final bytes = await image.readAsBytes();
       final b64 = base64Encode(bytes);
-      const apiKey = 'AIzaSyAw1iPUeIaQumZ8o0ANW_qQtPS3O3DU7A0';
-      final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$apiKey',
-      );
+      const apiKey = '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';
+      final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
         body: jsonEncode({
-          'contents': [
+          'model': 'meta-llama/llama-4-scout-17b-16e-instruct',
+          'messages': [
             {
-              'parts': [
+              'role': 'user',
+              'content': [
                 {
-                  'inlineData': {'mimeType': 'image/jpeg', 'data': b64}
+                  'type': 'image_url',
+                  'image_url': {'url': 'data:image/jpeg;base64,$b64'},
                 },
                 {
+                  'type': 'text',
                   'text': 'Identify every distinct food item visible in this photo. '
                       'For each item, estimate the macros for the visible portion. '
                       'Respond ONLY with a JSON object — no markdown, no explanation:\n'
                       '{"items":[{"name":"Food Name","calories":300,"protein":25,"carbs":30,"fat":10,"servingSize":1,"servingUnit":"serving"}]}\n'
                       'If no food is visible, return {"items":[]}.',
-                }
-              ]
+                },
+              ],
             }
           ],
-          'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 512},
+          'temperature': 0.1,
+          'max_tokens': 512,
         }),
       ).timeout(const Duration(seconds: 30));
 
@@ -1878,8 +2320,7 @@ class _FoodScanSheetState extends ConsumerState<_FoodScanSheet> {
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final text =
-          data['candidates'][0]['content']['parts'][0]['text'] as String;
+      final text = data['choices'][0]['message']['content'] as String;
       String jsonText = text.trim();
       final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(jsonText);
       if (jsonMatch != null) jsonText = jsonMatch.group(0)!;

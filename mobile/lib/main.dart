@@ -259,7 +259,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Your Weight Loss Journey',
+                  'Move. Sweat. Slay.',
                   style: TextStyle(color: kTextSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 48),

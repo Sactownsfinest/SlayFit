@@ -1,0 +1,7 @@
+name: pad_icon
+description: Pad app icon for adaptive icon safe zone
+version: 1.0.0
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+dependencies:
+  image: ^4.1.0

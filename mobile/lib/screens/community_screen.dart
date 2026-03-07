@@ -24,6 +24,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
   bool _initialized = false;
   bool _initializing = false;
   String _displayName = '';
+  String _initError = '';
 
   @override
   void initState() {
@@ -45,9 +46,9 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
     try {
       await FirebaseService.ensureSignedIn();
       _displayName = await FirebaseService.getDisplayName();
-      if (mounted) setState(() => _initialized = true);
-    } catch (_) {
-      if (mounted) setState(() => _initialized = false);
+      if (mounted) setState(() { _initialized = true; _initError = ''; });
+    } catch (e) {
+      if (mounted) setState(() { _initialized = false; _initError = e.toString(); });
     }
   }
 
@@ -101,9 +102,18 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
         children: [
           const Icon(Icons.cloud_off, color: kTextSecondary, size: 48),
           const SizedBox(height: 16),
-          const Text('Community features require\nan internet connection.',
+          const Text('Failed to connect to Firebase.',
               textAlign: TextAlign.center,
               style: TextStyle(color: kTextSecondary)),
+          if (_initError.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(_initError,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 11)),
+            ),
+          ],
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1392,7 +1393,11 @@ class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: source, imageQuality: 85);
     if (xfile == null) return;
-    final entry = {'path': xfile.path, 'ts': DateTime.now().toIso8601String()};
+    // Copy to permanent app storage so path survives app restarts
+    final appDir = await getApplicationDocumentsDirectory();
+    final fileName = 'progress_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final permanent = await File(xfile.path).copy('${appDir.path}/$fileName');
+    final entry = {'path': permanent.path, 'ts': DateTime.now().toIso8601String()};
     setState(() => _entries = [entry, ..._entries]);
     _persist();
   }
