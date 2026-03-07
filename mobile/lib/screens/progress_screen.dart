@@ -660,6 +660,137 @@ class _CalorieTrendCardState extends ConsumerState<_CalorieTrendCard> {
     return days[weekday - 1];
   }
 
+  Future<void> _showDayDetail(BuildContext context, int barIndex) async {
+    final now = DateTime.now();
+    final date = now.subtract(Duration(days: 6 - barIndex));
+    final dateKey =
+        'food_log_${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(dateKey);
+    final entries = <Map<String, dynamic>>[];
+    if (raw != null) {
+      for (final item in jsonDecode(raw) as List) {
+        entries.add(item as Map<String, dynamic>);
+      }
+    }
+
+    final totalCal =
+        entries.fold<double>(0, (s, e) => s + (e['calories'] as num));
+    final totalP =
+        entries.fold<double>(0, (s, e) => s + (e['protein'] as num));
+    final totalC = entries.fold<double>(0, (s, e) => s + (e['carbs'] as num));
+    final totalF = entries.fold<double>(0, (s, e) => s + (e['fat'] as num));
+
+    final label =
+        '${_shortDay(date.weekday)}, ${date.month}/${date.day}';
+
+    if (!context.mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: kSurfaceDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        maxChildSize: 0.85,
+        builder: (_, controller) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFF2A3550),
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16)),
+                  Text('${totalCal.toInt()} kcal',
+                      style: const TextStyle(
+                          color: kNeonYellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15)),
+                ],
+              ),
+            ),
+            if (totalCal > 0)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  children: [
+                    _MacroBadge('P', totalP, const Color(0xFF60A5FA)),
+                    const SizedBox(width: 8),
+                    _MacroBadge('C', totalC, Colors.greenAccent),
+                    const SizedBox(width: 8),
+                    _MacroBadge('F', totalF, const Color(0xFFFBBF24)),
+                  ],
+                ),
+              ),
+            const Divider(color: Color(0xFF2A3550), height: 1),
+            Expanded(
+              child: entries.isEmpty
+                  ? const Center(
+                      child: Text('No food logged this day.',
+                          style: TextStyle(
+                              color: kTextSecondary, fontSize: 14)))
+                  : ListView.builder(
+                      controller: controller,
+                      itemCount: entries.length,
+                      itemBuilder: (_, i) {
+                        final e = entries[i];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(e['name'] as String,
+                                        style: const TextStyle(
+                                            color: kTextPrimary,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500)),
+                                    Text(
+                                        'P: ${(e['protein'] as num).toInt()}g  C: ${(e['carbs'] as num).toInt()}g  F: ${(e['fat'] as num).toInt()}g',
+                                        style: const TextStyle(
+                                            color: kTextSecondary,
+                                            fontSize: 11)),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                  '${(e['calories'] as num).toInt()} kcal',
+                                  style: const TextStyle(
+                                      color: kNeonYellow,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final maxY = _dailyCalories.reduce((a, b) => a > b ? a : b);
@@ -716,6 +847,25 @@ class _CalorieTrendCardState extends ConsumerState<_CalorieTrendCard> {
                 BarChartData(
                   alignment: BarChartAlignment.spaceAround,
                   maxY: chartMax,
+                  barTouchData: BarTouchData(
+                    touchCallback: (FlTouchEvent event, BarTouchResponse? res) {
+                      if (event is FlTapUpEvent &&
+                          res?.spot != null) {
+                        _showDayDetail(
+                            context, res!.spot!.touchedBarGroupIndex);
+                      }
+                    },
+                    touchTooltipData: BarTouchTooltipData(
+                      tooltipBgColor: kCardDark,
+                      getTooltipItem: (group, _, rod, __) => BarTooltipItem(
+                        '${rod.toY.toInt()} kcal\nTap for details',
+                        const TextStyle(
+                            color: kNeonYellow,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                   gridData: FlGridData(
                     show: true,
                     drawVerticalLine: false,
@@ -926,8 +1076,8 @@ class _BMICard extends ConsumerWidget {
             ],
           ),
           const Spacer(),
-          Text('Healthy: 18.5–24.9',
-              style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+          const Text('Healthy: 18.5–24.9',
+              style: TextStyle(color: kTextSecondary, fontSize: 11)),
         ],
       ),
     );
@@ -1033,19 +1183,19 @@ class _MeasurementsCard extends ConsumerWidget {
                 if (latest.waistCm != null)
                   _MeasTile(
                       label: 'Waist',
-                      value: '${latest.waistCm!.toStringAsFixed(1)} cm'),
+                      value: '${(latest.waistCm! / 2.54).toStringAsFixed(1)} in'),
                 if (latest.hipsCm != null)
                   _MeasTile(
                       label: 'Hips',
-                      value: '${latest.hipsCm!.toStringAsFixed(1)} cm'),
+                      value: '${(latest.hipsCm! / 2.54).toStringAsFixed(1)} in'),
                 if (latest.chestCm != null)
                   _MeasTile(
                       label: 'Chest',
-                      value: '${latest.chestCm!.toStringAsFixed(1)} cm'),
+                      value: '${(latest.chestCm! / 2.54).toStringAsFixed(1)} in'),
                 if (latest.armsCm != null)
                   _MeasTile(
                       label: 'Arms',
-                      value: '${latest.armsCm!.toStringAsFixed(1)} cm'),
+                      value: '${(latest.armsCm! / 2.54).toStringAsFixed(1)} in'),
               ],
             ),
           ],
@@ -1115,14 +1265,19 @@ class _LogMeasurementsSheetState extends State<_LogMeasurementsSheet> {
     super.dispose();
   }
 
+  double? _inToCm(String text) {
+    final v = double.tryParse(text.trim());
+    return v != null ? v * 2.54 : null;
+  }
+
   void _save() {
     final m = BodyMeasurement(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       date: DateTime.now(),
-      waistCm: double.tryParse(_waist.text),
-      hipsCm: double.tryParse(_hips.text),
-      chestCm: double.tryParse(_chest.text),
-      armsCm: double.tryParse(_arms.text),
+      waistCm: _inToCm(_waist.text),
+      hipsCm: _inToCm(_hips.text),
+      chestCm: _inToCm(_chest.text),
+      armsCm: _inToCm(_arms.text),
       bodyFatPercent: double.tryParse(_bodyfat.text),
     );
     widget.ref.read(measurementsProvider.notifier).addMeasurement(m);
@@ -1140,7 +1295,7 @@ class _LogMeasurementsSheetState extends State<_LogMeasurementsSheet> {
             labelText: label,
             labelStyle:
                 const TextStyle(color: Color(0xFF8A9BB8)),
-            suffixText: label == 'Body Fat' ? '%' : 'cm',
+            suffixText: label == 'Body Fat' ? '%' : 'in',
             suffixStyle:
                 const TextStyle(color: Color(0xFF8A9BB8)),
             filled: true,
@@ -1202,8 +1357,9 @@ class _ProgressPhotosCard extends StatefulWidget {
 }
 
 class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
-  List<String> _paths = [];
-  static const _prefsKey = 'progress_photos';
+  // Each entry: {'path': String, 'ts': ISO8601 String}
+  List<Map<String, String>> _entries = [];
+  static const _prefsKey = 'progress_photos_v2';
 
   @override
   void initState() {
@@ -1213,69 +1369,108 @@ class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_prefsKey) ?? [];
-    setState(() => _paths = raw);
+    final raw = prefs.getString(_prefsKey);
+    if (raw != null) {
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      setState(() => _entries = list.map((e) => {'path': e['path'] as String, 'ts': e['ts'] as String}).toList());
+    } else {
+      // Migrate old gallery list if exists
+      final old = prefs.getStringList('progress_photos') ?? [];
+      if (old.isNotEmpty) {
+        _entries = old.map((p) => {'path': p, 'ts': DateTime.now().toIso8601String()}).toList();
+        _persist();
+      }
+    }
   }
 
-  Future<void> _addPhoto() async {
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, jsonEncode(_entries));
+  }
+
+  Future<void> _addPhoto(ImageSource source) async {
     final picker = ImagePicker();
-    final xfile =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final xfile = await picker.pickImage(source: source, imageQuality: 85);
     if (xfile == null) return;
-    final updated = [xfile.path, ..._paths];
-    setState(() => _paths = updated);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_prefsKey, updated);
+    final entry = {'path': xfile.path, 'ts': DateTime.now().toIso8601String()};
+    setState(() => _entries = [entry, ..._entries]);
+    _persist();
   }
 
-  Future<void> _removePhoto(int index) async {
-    final updated = [..._paths]..removeAt(index);
-    setState(() => _paths = updated);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_prefsKey, updated);
+  Future<void> _removeEntry(int index) async {
+    setState(() => _entries = [..._entries]..removeAt(index));
+    _persist();
+  }
+
+  String _formatTs(String iso) {
+    final dt = DateTime.parse(iso);
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) return 'Today ${_time(dt)}';
+    if (diff.inDays == 1) return 'Yesterday ${_time(dt)}';
+    return '${dt.month}/${dt.day}/${dt.year} ${_time(dt)}';
+  }
+
+  String _time(DateTime dt) {
+    final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $ampm';
+  }
+
+  void _showAddOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: kSurfaceDark,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: kNeonYellow),
+              title: const Text('Take Photo', style: TextStyle(color: kTextPrimary)),
+              onTap: () { Navigator.pop(context); _addPhoto(ImageSource.camera); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: kTextSecondary),
+              title: const Text('Choose from Gallery', style: TextStyle(color: kTextPrimary)),
+              onTap: () { Navigator.pop(context); _addPhoto(ImageSource.gallery); },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: kCardDark,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(color: kCardDark, borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Progress Photos',
-                  style: TextStyle(
-                      color: kTextPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15)),
+              const Text('Progress Diary',
+                  style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
               GestureDetector(
-                onTap: _addPhoto,
+                onTap: _showAddOptions,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: kNeonYellow.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: kNeonYellow.withValues(alpha: 0.3)),
+                    border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_photo_alternate_outlined,
-                          color: kNeonYellow, size: 14),
+                      Icon(Icons.add_a_photo_outlined, color: kNeonYellow, size: 14),
                       SizedBox(width: 4),
-                      Text('Add Photo',
-                          style: TextStyle(
-                              color: kNeonYellow,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600)),
+                      Text('Add', style: TextStyle(color: kNeonYellow, fontSize: 12, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -1283,65 +1478,64 @@ class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_paths.isEmpty)
-            const Text('Tap "Add Photo" to track your transformation.',
+          if (_entries.isEmpty)
+            const Text('Take or upload a photo to start your progress diary.',
                 style: TextStyle(color: kTextSecondary, fontSize: 13))
           else
-            SizedBox(
-              height: 88,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _paths.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
-                  final file = File(_paths[i]);
-                  return GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              _PhotoFullScreen(path: _paths[i])),
-                    ),
+            Column(
+              children: List.generate(_entries.length, (i) {
+                final e = _entries[i];
+                final file = File(e['path']!);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => _PhotoFullScreen(path: e['path']!))),
                     onLongPress: () async {
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
                           backgroundColor: kSurfaceDark,
-                          title: const Text('Remove photo?',
-                              style: TextStyle(color: Colors.white)),
+                          title: const Text('Delete this entry?', style: TextStyle(color: Colors.white)),
                           actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                             TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(ctx, false),
-                                child: const Text('Cancel')),
-                            TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(ctx, true),
-                                child: const Text('Remove',
-                                    style: TextStyle(
-                                        color: Colors.redAccent))),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Delete', style: TextStyle(color: Colors.redAccent))),
                           ],
                         ),
                       );
-                      if (ok == true) _removePhoto(i);
+                      if (ok == true) _removeEntry(i);
                     },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.file(file,
-                          width: 80,
-                          height: 80,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                                width: 80,
-                                height: 80,
-                                color: kCardDark,
-                                child: const Icon(Icons.broken_image,
-                                    color: kTextSecondary),
-                              )),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(file,
+                              width: 90, height: 90, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                  width: 90, height: 90, color: const Color(0xFF2A3550),
+                                  child: const Icon(Icons.broken_image, color: kTextSecondary))),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_formatTs(e['ts']!),
+                                  style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+                              const SizedBox(height: 4),
+                              const Text('Tap to view · Hold to delete',
+                                  style: TextStyle(color: kTextSecondary, fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              }),
             ),
         ],
       ),
@@ -1547,4 +1741,26 @@ class _MuscleVolumeCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _MacroBadge extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  const _MacroBadge(this.label, this.value, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          '$label: ${value.toInt()}g',
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      );
 }

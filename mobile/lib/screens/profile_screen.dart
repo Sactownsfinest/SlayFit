@@ -997,6 +997,11 @@ class _MeasurementsSummaryCardState extends ConsumerState<_MeasurementsSummaryCa
     super.dispose();
   }
 
+  double? _inToCm(String text) {
+    final v = double.tryParse(text.trim());
+    return v != null ? v * 2.54 : null;
+  }
+
   void _showAddDialog() {
     _waistCtrl.clear();
     _hipsCtrl.clear();
@@ -1012,10 +1017,10 @@ class _MeasurementsSummaryCardState extends ConsumerState<_MeasurementsSummaryCa
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _MeasureField(label: 'Waist (cm)', ctrl: _waistCtrl),
-              _MeasureField(label: 'Hips (cm)', ctrl: _hipsCtrl),
-              _MeasureField(label: 'Chest (cm)', ctrl: _chestCtrl),
-              _MeasureField(label: 'Arms (cm)', ctrl: _armsCtrl),
+              _MeasureField(label: 'Waist (inches)', ctrl: _waistCtrl),
+              _MeasureField(label: 'Hips (inches)', ctrl: _hipsCtrl),
+              _MeasureField(label: 'Chest (inches)', ctrl: _chestCtrl),
+              _MeasureField(label: 'Arms (inches)', ctrl: _armsCtrl),
               _MeasureField(label: 'Body Fat (%)', ctrl: _bodyFatCtrl),
             ],
           ),
@@ -1027,10 +1032,10 @@ class _MeasurementsSummaryCardState extends ConsumerState<_MeasurementsSummaryCa
               final m = BodyMeasurement(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 date: DateTime.now(),
-                waistCm: double.tryParse(_waistCtrl.text),
-                hipsCm: double.tryParse(_hipsCtrl.text),
-                chestCm: double.tryParse(_chestCtrl.text),
-                armsCm: double.tryParse(_armsCtrl.text),
+                waistCm: _inToCm(_waistCtrl.text),
+                hipsCm: _inToCm(_hipsCtrl.text),
+                chestCm: _inToCm(_chestCtrl.text),
+                armsCm: _inToCm(_armsCtrl.text),
                 bodyFatPercent: double.tryParse(_bodyFatCtrl.text),
               );
               ref.read(measurementsProvider.notifier).addMeasurement(m);
@@ -1087,10 +1092,10 @@ class _MeasurementsSummaryCardState extends ConsumerState<_MeasurementsSummaryCa
               spacing: 12,
               runSpacing: 8,
               children: [
-                if (latest.waistCm != null) _measureTile('Waist', '${latest.waistCm!.toStringAsFixed(1)} cm'),
-                if (latest.hipsCm != null) _measureTile('Hips', '${latest.hipsCm!.toStringAsFixed(1)} cm'),
-                if (latest.chestCm != null) _measureTile('Chest', '${latest.chestCm!.toStringAsFixed(1)} cm'),
-                if (latest.armsCm != null) _measureTile('Arms', '${latest.armsCm!.toStringAsFixed(1)} cm'),
+                if (latest.waistCm != null) _measureTile('Waist', '${(latest.waistCm! / 2.54).toStringAsFixed(1)} in'),
+                if (latest.hipsCm != null) _measureTile('Hips', '${(latest.hipsCm! / 2.54).toStringAsFixed(1)} in'),
+                if (latest.chestCm != null) _measureTile('Chest', '${(latest.chestCm! / 2.54).toStringAsFixed(1)} in'),
+                if (latest.armsCm != null) _measureTile('Arms', '${(latest.armsCm! / 2.54).toStringAsFixed(1)} in'),
                 if (latest.bodyFatPercent != null) _measureTile('Body Fat', '${latest.bodyFatPercent!.toStringAsFixed(1)}%'),
               ],
             ),

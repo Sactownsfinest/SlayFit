@@ -160,13 +160,7 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen> {
           if (!isAutoTip) {
             final raw = e.toString();
             final String msg;
-            if (raw.contains('429') || raw.contains('RESOURCE_EXHAUSTED') || raw.contains('quota')) {
-              msg = 'AI quota limit reached. Please try again in a few minutes.';
-            } else if (raw.contains('timeout') || raw.contains('SocketException')) {
-              msg = 'Connection timed out. Check your internet and try again.';
-            } else {
-              msg = 'Error: ${raw.length > 300 ? raw.substring(0, 300) : raw}';
-            }
+            msg = 'DEBUG: ${raw.length > 500 ? raw.substring(0, 500) : raw}';
             _messages.add(_ChatMessage(role: 'assistant', text: msg));
           }
           _loading = false;

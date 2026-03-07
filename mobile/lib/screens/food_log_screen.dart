@@ -41,6 +41,8 @@ class FoodLogScreen extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              const _FavoritesSection(),
+              const SizedBox(height: 12),
               _MealSection(
                 mealType: MealType.breakfast,
                 icon: Icons.wb_sunny_outlined,
@@ -310,7 +312,26 @@ class _FoodEntryTile extends ConsumerWidget {
               const SizedBox(width: 4),
               const Text('kcal',
                   style: TextStyle(color: kTextSecondary, fontSize: 11)),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => ref
+                    .read(favoriteFoodsProvider.notifier)
+                    .toggle(entry),
+                child: Icon(
+                  ref.watch(favoriteFoodsProvider).any((f) =>
+                          f.name.toLowerCase() ==
+                          entry.name.toLowerCase())
+                      ? Icons.bookmark
+                      : Icons.bookmark_border,
+                  color: ref.watch(favoriteFoodsProvider).any((f) =>
+                          f.name.toLowerCase() ==
+                          entry.name.toLowerCase())
+                      ? kNeonYellow
+                      : kTextSecondary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 4),
             ],
           ),
         ),
@@ -1584,6 +1605,197 @@ class _CreateRecipeSheetState extends State<_CreateRecipeSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Favorites Section ─────────────────────────────────────────────────────────
+
+class _FavoritesSection extends ConsumerWidget {
+  const _FavoritesSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final favorites = ref.watch(favoriteFoodsProvider);
+    if (favorites.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.bookmark, color: kNeonYellow, size: 16),
+                const SizedBox(width: 8),
+                const Text('Favorites',
+                    style: TextStyle(
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
+                const Spacer(),
+                Text('${favorites.length}',
+                    style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFF2A3550)),
+          ...favorites.map((fav) => _FavoriteTile(fav: fav)),
+        ],
+      ),
+    );
+  }
+}
+
+class _FavoriteTile extends ConsumerWidget {
+  final FoodEntry fav;
+  const _FavoriteTile({required this.fav});
+
+  void _quickAdd(BuildContext context, WidgetRef ref) {
+    MealType selected = MealType.breakfast;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: kSurfaceDark,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(fav.name,
+                  style: const TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+              const SizedBox(height: 4),
+              Text(
+                  '${fav.calories.toInt()} kcal · P: ${fav.protein.toInt()}g  C: ${fav.carbs.toInt()}g  F: ${fav.fat.toInt()}g',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+              const SizedBox(height: 20),
+              const Text('Add to:',
+                  style: TextStyle(color: kTextSecondary, fontSize: 13)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: MealType.values.map((m) {
+                  final isSelected = selected == m;
+                  return GestureDetector(
+                    onTap: () => setState(() => selected = m),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? kNeonYellow : const Color(0xFF2A3550),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        m.name[0].toUpperCase() + m.name.substring(1),
+                        style: TextStyle(
+                          color: isSelected ? Colors.black : kTextSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  ref.read(foodLogProvider.notifier).addEntry(FoodEntry(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        name: fav.name,
+                        calories: fav.calories,
+                        protein: fav.protein,
+                        carbs: fav.carbs,
+                        fat: fav.fat,
+                        servingSize: fav.servingSize,
+                        servingUnit: fav.servingUnit,
+                        meal: selected,
+                        loggedAt: DateTime.now(),
+                      ));
+                  Navigator.pop(ctx);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kNeonYellow,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Add to Log',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(fav.name,
+                    style: const TextStyle(
+                        color: kTextPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                    '${fav.calories.toInt()} kcal · P: ${fav.protein.toInt()}g  C: ${fav.carbs.toInt()}g  F: ${fav.fat.toInt()}g',
+                    style:
+                        const TextStyle(color: kTextSecondary, fontSize: 11)),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _quickAdd(context, ref),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: kNeonYellow.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border:
+                    Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, color: kNeonYellow, size: 14),
+                  SizedBox(width: 4),
+                  Text('Add',
+                      style: TextStyle(
+                          color: kNeonYellow,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => ref.read(favoriteFoodsProvider.notifier).toggle(fav),
+            child: const Icon(Icons.bookmark, color: kNeonYellow, size: 18),
+          ),
+        ],
       ),
     );
   }

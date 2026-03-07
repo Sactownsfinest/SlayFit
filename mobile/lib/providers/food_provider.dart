@@ -252,3 +252,60 @@ final foodLogProvider =
     StateNotifierProvider<FoodLogNotifier, FoodLogState>((ref) {
   return FoodLogNotifier(ref);
 });
+
+// ── Favorite Foods ────────────────────────────────────────────────────────────
+
+class FavoriteFoodsNotifier extends StateNotifier<List<FoodEntry>> {
+  FavoriteFoodsNotifier() : super([]) {
+    _load();
+  }
+
+  static const _key = 'favorite_foods_v1';
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null) return;
+    state = (jsonDecode(raw) as List)
+        .map((e) => FoodEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _key, jsonEncode(state.map((e) => e.toJson()).toList()));
+  }
+
+  bool isFavorite(String name) =>
+      state.any((f) => f.name.toLowerCase() == name.toLowerCase());
+
+  Future<void> toggle(FoodEntry entry) async {
+    final idx = state
+        .indexWhere((f) => f.name.toLowerCase() == entry.name.toLowerCase());
+    if (idx >= 0) {
+      state = [...state]..removeAt(idx);
+    } else {
+      state = [
+        FoodEntry(
+          id: entry.name.hashCode.abs().toString(),
+          name: entry.name,
+          calories: entry.calories,
+          protein: entry.protein,
+          carbs: entry.carbs,
+          fat: entry.fat,
+          servingSize: entry.servingSize,
+          servingUnit: entry.servingUnit,
+          meal: MealType.snack,
+          loggedAt: DateTime(2000),
+        ),
+        ...state,
+      ];
+    }
+    await _save();
+  }
+}
+
+final favoriteFoodsProvider =
+    StateNotifierProvider<FavoriteFoodsNotifier, List<FoodEntry>>(
+        (_) => FavoriteFoodsNotifier());
