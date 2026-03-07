@@ -158,10 +158,10 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen> {
       if (mounted) {
         setState(() {
           if (!isAutoTip) {
-            final raw = e.toString();
-            final String msg;
-            msg = 'DEBUG: ${raw.length > 500 ? raw.substring(0, 500) : raw}';
-            _messages.add(_ChatMessage(role: 'assistant', text: msg));
+            _messages.add(const _ChatMessage(
+              role: 'assistant',
+              text: "Sorry, I couldn't connect right now. Please check your internet connection and try again.",
+            ));
           }
           _loading = false;
         });

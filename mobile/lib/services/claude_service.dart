@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const _kGeminiApiKey = 'AIzaSyAw1iPUeIaQumZ8o0ANW_qQtPS3O3DU7A0';
-const _kModel = 'gemini-2.0-flash-lite';
+const _kGroqApiKey = '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';
+const _kModel = 'llama-3.3-70b-versatile';
 
 class ClaudeService {
   static String _buildSystemPrompt(Map<String, dynamic> ctx) {
@@ -47,32 +47,27 @@ Use the user's actual data to give personalized advice. Never make up data you d
     required String userMessage,
     required Map<String, dynamic> context,
   }) async {
-    // Build Gemini-format contents (role: "user" | "model")
-    final contents = <Map<String, dynamic>>[];
+    // Build messages array (OpenAI-compatible format)
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': _buildSystemPrompt(context)},
+    ];
     for (final m in history) {
-      contents.add({
-        'role': m['role'] == 'assistant' ? 'model' : 'user',
-        'parts': [{'text': m['content']}],
-      });
+      messages.add({'role': m['role']!, 'content': m['content']!});
     }
-    contents.add({
-      'role': 'user',
-      'parts': [{'text': userMessage}],
-    });
+    messages.add({'role': 'user', 'content': userMessage});
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$_kModel:generateContent?key=$_kGeminiApiKey',
-    );
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
 
     final response = await http.post(
       url,
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_kGroqApiKey',
+      },
       body: jsonEncode({
-        'system_instruction': {
-          'parts': [{'text': _buildSystemPrompt(context)}],
-        },
-        'contents': contents,
-        'generationConfig': {'maxOutputTokens': 512},
+        'model': _kModel,
+        'messages': messages,
+        'max_tokens': 512,
       }),
     ).timeout(const Duration(seconds: 35));
 
@@ -81,6 +76,6 @@ Use the user's actual data to give personalized advice. Never make up data you d
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return data['candidates'][0]['content']['parts'][0]['text'] as String;
+    return data['choices'][0]['message']['content'] as String;
   }
 }

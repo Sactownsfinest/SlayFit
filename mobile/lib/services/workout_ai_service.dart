@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const _kGeminiApiKey = 'AIzaSyAw1iPUeIaQumZ8o0ANW_qQtPS3O3DU7A0';
-const _kModel = 'gemini-2.0-flash-lite';
+const _kGroqApiKey = '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';
+const _kModel = 'llama-3.3-70b-versatile';
 
 class AiExercise {
   final String name;
@@ -97,24 +97,22 @@ class WorkoutAiService {
         '{"name":"Short plan name","focus":"Fat Burn","durationMinutes":30,"exercises":[{"name":"Exercise","sets":3,"reps":12,"rest":30}],"estimatedCalories":250,"youtubeQuery":"30 minute fat burn HIIT beginner home no equipment"}\n\n'
         'Rules: 5-8 exercises for home use, no gym equipment. durationMinutes must be 20, 30, or 45. youtubeQuery must exactly match the workout type and duration shown in exercises.';
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$_kModel:generateContent?key=$_kGeminiApiKey',
-    );
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
 
     final response = await http
         .post(
           url,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_kGroqApiKey',
+          },
           body: jsonEncode({
-            'contents': [
-              {
-                'role': 'user',
-                'parts': [
-                  {'text': prompt}
-                ]
-              }
+            'model': _kModel,
+            'messages': [
+              {'role': 'user', 'content': prompt},
             ],
-            'generationConfig': {'maxOutputTokens': 600, 'temperature': 0.7},
+            'max_tokens': 600,
+            'temperature': 0.7,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -124,8 +122,7 @@ class WorkoutAiService {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final text =
-        data['candidates'][0]['content']['parts'][0]['text'] as String;
+    final text = data['choices'][0]['message']['content'] as String;
 
     final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(text);
     if (jsonMatch == null) throw Exception('Invalid AI response format');
