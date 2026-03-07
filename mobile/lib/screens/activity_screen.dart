@@ -151,8 +151,8 @@ class _WorkoutsTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       children: [
-        // AI Personal Plan
-        const _AiWorkoutPlanCard(),
+        // AI Guided Workout
+        const _AiGuidedWorkoutCard(),
         // Recent sessions
         if (workout.recentSessions.isNotEmpty) ...[
           const Text('Recent Sessions',
@@ -207,47 +207,7 @@ class _WorkoutsTab extends ConsumerWidget {
         else
           ...workout.plans.map((plan) => _PlanCard(plan: plan)),
         const SizedBox(height: 20),
-        // ── Library ──────────────────────────────────────────────────────
-        const Text('Workout Library',
-            style: TextStyle(
-                color: kTextPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
-        const SizedBox(height: 4),
-        const Text('Tap a plan to preview and add it to My Plans.',
-            style: TextStyle(color: kTextSecondary, fontSize: 12)),
-        const SizedBox(height: 14),
-        _LibraryDurationCard(
-          label: '5-Minute',
-          subtitle: 'Quick moves, anytime',
-          icon: Icons.bolt,
-          color: const Color(0xFFFBBF24),
-          plans: kLibrary5Min,
-        ),
-        const SizedBox(height: 10),
-        _LibraryDurationCard(
-          label: '10-Minute',
-          subtitle: 'Easy & light workouts',
-          icon: Icons.directions_walk,
-          color: Colors.greenAccent,
-          plans: kLibrary10Min,
-        ),
-        const SizedBox(height: 10),
-        _LibraryDurationCard(
-          label: '30-Minute',
-          subtitle: 'Solid full-body sessions',
-          icon: Icons.fitness_center,
-          color: kNeonYellow,
-          plans: kLibrary30Min,
-        ),
-        const SizedBox(height: 10),
-        _LibraryDurationCard(
-          label: '60-Minute',
-          subtitle: 'Complete challenge workouts',
-          icon: Icons.local_fire_department,
-          color: Colors.orangeAccent,
-          plans: kLibrary60Min,
-        ),
+        const _WorkoutCategoriesSection(),
       ],
     );
   }
@@ -341,115 +301,109 @@ class _EmptyPlansHint extends StatelessWidget {
   }
 }
 
-// ── AI Workout Plan Card ──────────────────────────────────────────────────────
+// ── AI Guided Workout Card ────────────────────────────────────────────────────
 
-class _AiWorkoutPlanCard extends ConsumerStatefulWidget {
-  const _AiWorkoutPlanCard();
+class _AiGuidedWorkoutCard extends ConsumerStatefulWidget {
+  const _AiGuidedWorkoutCard();
 
   @override
-  ConsumerState<_AiWorkoutPlanCard> createState() => _AiWorkoutPlanCardState();
+  ConsumerState<_AiGuidedWorkoutCard> createState() =>
+      _AiGuidedWorkoutCardState();
 }
 
-class _AiWorkoutPlanCardState extends ConsumerState<_AiWorkoutPlanCard> {
-  AiWorkoutPlan? _plan;
+class _AiGuidedWorkoutCardState extends ConsumerState<_AiGuidedWorkoutCard> {
+  final _ctrl = TextEditingController();
+  List<YouTubeVideo> _videos = [];
   bool _loading = false;
   String? _error;
-  YoutubePlayerController? _videoController;
-  bool _loadingVideo = false;
+  YouTubeVideo? _selectedVideo;
+  YoutubePlayerController? _playerController;
+  bool _completed = false;
 
-  static const _prefKey = 'ai_workout_plan_v1';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCached();
-  }
+  static const _chips = [
+    'Arthritis friendly',
+    'Bad back safe',
+    'Gentle yoga',
+    'Low impact HIIT',
+    'Morning stretch',
+    'Core strength',
+    'Senior fitness',
+    'Pilates beginner',
+  ];
 
   @override
   void dispose() {
-    _videoController?.dispose();
+    _ctrl.dispose();
+    _playerController?.dispose();
     super.dispose();
   }
 
-  Future<void> _loadCached() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefKey);
-    if (raw == null) return;
-    try {
-      final plan = AiWorkoutPlan.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>);
-      final today = DateTime.now();
-      if (plan.generatedAt.year == today.year &&
-          plan.generatedAt.month == today.month &&
-          plan.generatedAt.day == today.day) {
-        if (mounted) {
-          setState(() => _plan = plan);
-          _fetchVideo(plan.youtubeQuery, plan.durationMinutes);
-        }
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _generate() async {
+  Future<void> _search() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
+      _videos = [];
+      _selectedVideo = null;
+      _playerController?.dispose();
+      _playerController = null;
+      _completed = false;
     });
     try {
-      final profile = ref.read(userProfileProvider);
-      final weight = ref.read(weightProvider);
-      final plan = await WorkoutAiService.generatePlan(
-        userName: profile.name,
-        currentWeightKg: weight.entries.isNotEmpty
-            ? weight.entries.last.weightKg
-            : null,
-        goalWeightKg: weight.goalWeightKg,
-        dailyCalorieGoal: profile.dailyCalorieGoal,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKey, jsonEncode(plan.toJson()));
+      final query = await WorkoutAiService.generateSearchQuery(text);
+      final videos = await YouTubeService.searchVideos(query, maxResults: 5);
       if (mounted) {
         setState(() {
-          _plan = plan;
           _loading = false;
-        });
-        _fetchVideo(plan.youtubeQuery, plan.durationMinutes);
-      }
-    } catch (e) {
-      if (mounted) {
-        final raw = e.toString();
-        setState(() {
-          _loading = false;
-          if (raw.contains('429') || raw.contains('quota') ||
-              raw.contains('RESOURCE_EXHAUSTED')) {
-            _error = 'AI quota reached. Try again in a few minutes.';
-          } else {
-            _error = 'Could not generate plan. Please try again.';
+          _videos = videos;
+          if (videos.isEmpty) {
+            _error = 'No videos found. Try a different description.';
           }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not search. Check your connection and try again.';
         });
       }
     }
   }
 
-  Future<void> _fetchVideo(String query, int durationMinutes) async {
-    setState(() => _loadingVideo = true);
-    final videoId = await YouTubeService.searchVideoId(query,
-        durationMinutes: durationMinutes);
-    if (!mounted) return;
+  void _playVideo(YouTubeVideo video) {
     setState(() {
-      _loadingVideo = false;
-      if (videoId != null) {
-        _videoController?.dispose();
-        _videoController = YoutubePlayerController(
-          initialVideoId: videoId,
-          flags: const YoutubePlayerFlags(
-            autoPlay: false,
-            mute: false,
-            enableCaption: false,
-          ),
-        );
-      }
+      _selectedVideo = video;
+      _completed = false;
+      _playerController?.dispose();
+      _playerController = YoutubePlayerController(
+        initialVideoId: video.videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          enableCaption: false,
+        ),
+      );
     });
+  }
+
+  void _markComplete() {
+    showDialog(
+      context: context,
+      builder: (_) => _WorkoutCompleteDialog(
+        workoutName: _selectedVideo?.title ?? _ctrl.text.trim(),
+        onConfirm: (minutes, calories) {
+          ref.read(activityProvider.notifier).logActivity(
+                name: _selectedVideo?.title ?? _ctrl.text.trim(),
+                category: ActivityCategory.other,
+                durationMinutes: minutes,
+                caloriesBurned: calories,
+              );
+          setState(() => _completed = true);
+        },
+      ),
+    );
   }
 
   @override
@@ -465,124 +419,194 @@ class _AiWorkoutPlanCardState extends ConsumerState<_AiWorkoutPlanCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.psychology, color: kNeonYellow, size: 18),
-              const SizedBox(width: 8),
-              const Text('AI Personal Plan',
+              Icon(Icons.psychology, color: kNeonYellow, size: 18),
+              SizedBox(width: 8),
+              Text('Find My Workout',
                   style: TextStyle(
                       color: kNeonYellow,
                       fontWeight: FontWeight.bold,
                       fontSize: 15)),
-              const Spacer(),
-              if (_plan != null && !_loading)
-                GestureDetector(
-                  onTap: _generate,
-                  child: const Text('Regenerate',
-                      style:
-                          TextStyle(color: kTextSecondary, fontSize: 12)),
-                ),
             ],
           ),
-          if (_loading) ...[
-            const SizedBox(height: 20),
-            const Center(
-                child: CircularProgressIndicator(color: kNeonYellow)),
-            const SizedBox(height: 8),
-            const Center(
-                child: Text('Building your plan...',
-                    style:
-                        TextStyle(color: kTextSecondary, fontSize: 13))),
-            const SizedBox(height: 12),
-          ] else if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!,
-                style:
-                    const TextStyle(color: Colors.redAccent, fontSize: 13)),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _generate,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: kNeonYellow,
-                  foregroundColor: Colors.black),
-              child: const Text('Try Again'),
+          const SizedBox(height: 4),
+          const Text(
+            'Describe your situation, limitations, and goal for today.',
+            style: TextStyle(color: kTextSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            style: const TextStyle(color: kTextPrimary, fontSize: 14),
+            maxLines: 2,
+            minLines: 1,
+            decoration: InputDecoration(
+              hintText:
+                  'e.g. I have arthritis, want a 20 min gentle yoga session',
+              hintStyle: const TextStyle(color: kTextSecondary, fontSize: 13),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              filled: true,
+              fillColor: const Color(0xFF0F172A),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFF2A3550)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFF2A3550)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: kNeonYellow, width: 1.5),
+              ),
             ),
-          ] else if (_plan == null) ...[
-            const SizedBox(height: 8),
-            const Text(
-                'Get a workout built specifically for your weight goal.',
-                style: TextStyle(color: kTextSecondary, fontSize: 13)),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _generate,
-              icon: const Icon(Icons.auto_awesome, size: 16),
-              label: const Text('Generate My Plan'),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _chips
+                .map((chip) => GestureDetector(
+                      onTap: () {
+                        _ctrl.text = chip;
+                        _ctrl.selection = TextSelection.fromPosition(
+                          TextPosition(offset: chip.length),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: kNeonYellow.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: kNeonYellow.withValues(alpha: 0.25)),
+                        ),
+                        child: Text(chip,
+                            style: const TextStyle(
+                                color: kTextSecondary, fontSize: 12)),
+                      ),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _loading ? null : _search,
+              icon: _loading
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          color: Colors.black, strokeWidth: 2))
+                  : const Icon(Icons.search, size: 16),
+              label:
+                  Text(_loading ? 'Finding videos...' : 'Find My Workout'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: kNeonYellow,
                 foregroundColor: Colors.black,
                 minimumSize: const Size(double.infinity, 44),
+                textStyle:
+                    const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
-          ] else ...[
-            const SizedBox(height: 12),
-            Text(_plan!.name,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!,
                 style: const TextStyle(
-                    color: kTextPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16)),
-            const SizedBox(height: 2),
-            Text(
-                '${_plan!.focus} · ${_plan!.durationMinutes} min · ~${_plan!.estimatedCalories} kcal',
-                style:
-                    const TextStyle(color: kTextSecondary, fontSize: 12)),
-            const SizedBox(height: 14),
-            ..._plan!.exercises.map((ex) => Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                            color: kNeonYellow, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(ex.name,
-                              style: const TextStyle(
-                                  color: kTextPrimary, fontSize: 13))),
-                      Text('${ex.sets}×${ex.reps}',
-                          style: const TextStyle(
-                              color: kTextSecondary, fontSize: 12)),
-                    ],
-                  ),
-                )),
+                    color: Colors.redAccent, fontSize: 13)),
+          ],
+          if (_videos.isNotEmpty && _selectedVideo == null) ...[
             const SizedBox(height: 16),
-            if (_loadingVideo)
+            const Text('Matching workouts:',
+                style: TextStyle(
+                    color: kTextPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14)),
+            const SizedBox(height: 10),
+            ..._videos.map((v) => _VideoResultTile(
+                  video: v,
+                  onTap: () => _playVideo(v),
+                )),
+          ],
+          if (_selectedVideo != null) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedVideo!.title,
+                    style: const TextStyle(
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _playerController?.dispose();
+                    _playerController = null;
+                    _selectedVideo = null;
+                  }),
+                  child: const Icon(Icons.close,
+                      color: kTextSecondary, size: 18),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: YoutubePlayer(
+                controller: _playerController!,
+                showVideoProgressIndicator: true,
+                progressIndicatorColor: kNeonYellow,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_completed)
               Container(
-                height: 180,
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Center(
-                    child: CircularProgressIndicator(color: kNeonYellow)),
-              )
-            else if (_videoController != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: YoutubePlayer(
-                  controller: _videoController!,
-                  showVideoProgressIndicator: true,
-                  progressIndicatorColor: kNeonYellow,
+                  color: Colors.green.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.35)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle,
+                        color: Colors.greenAccent, size: 16),
+                    SizedBox(width: 6),
+                    Text('Logged to activities!',
+                        style: TextStyle(
+                            color: Colors.greenAccent,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13)),
+                  ],
                 ),
               )
             else
-              Container(
-                height: 56,
-                alignment: Alignment.center,
-                child: const Text('No matching video found',
-                    style: TextStyle(
-                        color: kTextSecondary, fontSize: 12)),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _markComplete,
+                  icon: const Icon(Icons.check_circle_outline, size: 16),
+                  label: const Text('Mark as Complete'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 42),
+                  ),
+                ),
               ),
           ],
         ],
@@ -591,73 +615,316 @@ class _AiWorkoutPlanCardState extends ConsumerState<_AiWorkoutPlanCard> {
   }
 }
 
-// ── Library Duration Card ─────────────────────────────────────────────────────
+// ── Video Result Tile ─────────────────────────────────────────────────────────
 
-class _LibraryDurationCard extends ConsumerWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final List<LibraryPlan> plans;
+class _VideoResultTile extends StatelessWidget {
+  final YouTubeVideo video;
+  final VoidCallback onTap;
 
-  const _LibraryDurationCard({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.plans,
-  });
+  const _VideoResultTile({required this.video, required this.onTap});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _showLibrarySheet(context),
+      onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: kCardDark,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFF2A3550)),
         ),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                video.thumbnailUrl,
+                width: 80,
+                height: 50,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 80,
+                  height: 50,
+                  color: const Color(0xFF2A3550),
+                  child: const Icon(Icons.play_circle,
+                      color: kTextSecondary, size: 24),
+                ),
               ),
-              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                  Text(subtitle,
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 12)),
+                  Text(
+                    video.title,
+                    style: const TextStyle(
+                        color: kTextPrimary, fontSize: 13),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    video.channelTitle,
+                    style: const TextStyle(
+                        color: kTextSecondary, fontSize: 11),
+                  ),
                 ],
               ),
             ),
-            Text('${plans.length} plans',
-                style:
-                    const TextStyle(color: kTextSecondary, fontSize: 12)),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, color: kTextSecondary, size: 18),
+            const SizedBox(width: 8),
+            const Icon(Icons.play_circle_filled,
+                color: kNeonYellow, size: 28),
           ],
         ),
       ),
     );
   }
+}
 
-  void _showLibrarySheet(BuildContext context) {
+// ── Workout Complete Dialog ───────────────────────────────────────────────────
+
+class _WorkoutCompleteDialog extends ConsumerStatefulWidget {
+  final String workoutName;
+  final void Function(int minutes, double calories) onConfirm;
+
+  const _WorkoutCompleteDialog({
+    required this.workoutName,
+    required this.onConfirm,
+  });
+
+  @override
+  ConsumerState<_WorkoutCompleteDialog> createState() =>
+      _WorkoutCompleteDialogState();
+}
+
+class _WorkoutCompleteDialogState
+    extends ConsumerState<_WorkoutCompleteDialog> {
+  int _minutes = 30;
+  double _calories = 195;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: kCardDark,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(
+        children: [
+          Text('🎉', style: TextStyle(fontSize: 22)),
+          SizedBox(width: 8),
+          Text('Workout Complete!',
+              style: TextStyle(
+                  color: kTextPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.workoutName,
+            style: const TextStyle(color: kTextSecondary, fontSize: 13),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 16),
+          const Text('Duration (minutes)',
+              style: TextStyle(color: kTextPrimary, fontSize: 13)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: _minutes.toDouble(),
+                  min: 5,
+                  max: 90,
+                  divisions: 17,
+                  activeColor: kNeonYellow,
+                  onChanged: (v) => setState(() {
+                    _minutes = v.round();
+                    _calories = (_minutes * 6.5).roundToDouble();
+                  }),
+                ),
+              ),
+              Text('$_minutes min',
+                  style: const TextStyle(
+                      color: kNeonYellow,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14)),
+            ],
+          ),
+          Text(
+            '~${_calories.round()} kcal estimated',
+            style: const TextStyle(color: kTextSecondary, fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Not Yet',
+              style: TextStyle(color: kTextSecondary)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.pop(context);
+            widget.onConfirm(_minutes, _calories);
+          },
+          style: ElevatedButton.styleFrom(
+              backgroundColor: kNeonYellow,
+              foregroundColor: Colors.black),
+          child: const Text('Log It!',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Workout Categories Section ────────────────────────────────────────────────
+
+const _kWorkoutCategories = [
+  _WorkoutCategory(
+    label: 'Yoga & Flow',
+    icon: Icons.self_improvement,
+    color: Color(0xFF8B5CF6),
+    query: 'gentle yoga flow full body beginner at home',
+  ),
+  _WorkoutCategory(
+    label: 'Arthritis & Joints',
+    icon: Icons.favorite,
+    color: Color(0xFFEC4899),
+    query: 'arthritis friendly gentle exercise low impact joints',
+  ),
+  _WorkoutCategory(
+    label: 'Low Impact HIIT',
+    icon: Icons.directions_run,
+    color: Color(0xFFF59E0B),
+    query: 'low impact HIIT cardio no jumping beginner workout',
+  ),
+  _WorkoutCategory(
+    label: 'Stretching & Mobility',
+    icon: Icons.accessibility_new,
+    color: Color(0xFF10B981),
+    query: 'full body stretching routine flexibility mobility',
+  ),
+  _WorkoutCategory(
+    label: 'Core & Back',
+    icon: Icons.fitness_center,
+    color: Color(0xFF3B82F6),
+    query: 'core strengthening workout lower back pain relief safe',
+  ),
+  _WorkoutCategory(
+    label: 'Pilates',
+    icon: Icons.sports_gymnastics,
+    color: Color(0xFFF97316),
+    query: 'pilates workout beginner core strength toning',
+  ),
+  _WorkoutCategory(
+    label: 'Senior Fitness',
+    icon: Icons.elderly,
+    color: Color(0xFF06B6D4),
+    query: 'senior fitness workout chair exercises low impact elderly',
+  ),
+  _WorkoutCategory(
+    label: 'Strength Training',
+    icon: Icons.sports_handball,
+    color: Color(0xFFE8FF00),
+    query: 'bodyweight strength training beginner no equipment home',
+  ),
+];
+
+class _WorkoutCategory {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String query;
+
+  const _WorkoutCategory({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.query,
+  });
+}
+
+class _WorkoutCategoriesSection extends StatelessWidget {
+  const _WorkoutCategoriesSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Browse by Category',
+            style: TextStyle(
+                color: kTextPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
+        const SizedBox(height: 4),
+        const Text('Tap a category for curated free workout videos.',
+            style: TextStyle(color: kTextSecondary, fontSize: 12)),
+        const SizedBox(height: 14),
+        GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 2.4,
+          ),
+          itemCount: _kWorkoutCategories.length,
+          itemBuilder: (context, i) {
+            final cat = _kWorkoutCategories[i];
+            return GestureDetector(
+              onTap: () => _showCategoryVideos(context, cat),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: kCardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: cat.color.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: cat.color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(cat.icon, color: cat.color, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        cat.label,
+                        style: TextStyle(
+                            color: cat.color,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showCategoryVideos(BuildContext context, _WorkoutCategory cat) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -665,10 +932,200 @@ class _LibraryDurationCard extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _LibraryPlanListSheet(
-        durationLabel: label,
-        plans: plans,
-        accentColor: color,
+      builder: (_) => _CategoryVideosSheet(category: cat),
+    );
+  }
+}
+
+// ── Category Videos Sheet ─────────────────────────────────────────────────────
+
+class _CategoryVideosSheet extends ConsumerStatefulWidget {
+  final _WorkoutCategory category;
+
+  const _CategoryVideosSheet({required this.category});
+
+  @override
+  ConsumerState<_CategoryVideosSheet> createState() =>
+      _CategoryVideosSheetState();
+}
+
+class _CategoryVideosSheetState
+    extends ConsumerState<_CategoryVideosSheet> {
+  List<YouTubeVideo> _videos = [];
+  bool _loading = true;
+  YoutubePlayerController? _playerController;
+  YouTubeVideo? _playing;
+  bool _completed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchVideos();
+  }
+
+  @override
+  void dispose() {
+    _playerController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchVideos() async {
+    final videos = await YouTubeService.searchVideos(
+        widget.category.query,
+        maxResults: 6);
+    if (mounted) {
+      setState(() {
+        _videos = videos;
+        _loading = false;
+      });
+    }
+  }
+
+  void _playVideo(YouTubeVideo video) {
+    setState(() {
+      _playing = video;
+      _completed = false;
+      _playerController?.dispose();
+      _playerController = YoutubePlayerController(
+        initialVideoId: video.videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          enableCaption: false,
+        ),
+      );
+    });
+  }
+
+  void _markComplete() {
+    showDialog(
+      context: context,
+      builder: (_) => _WorkoutCompleteDialog(
+        workoutName: _playing?.title ?? widget.category.label,
+        onConfirm: (minutes, calories) {
+          ref.read(activityProvider.notifier).logActivity(
+                name: _playing?.title ?? widget.category.label,
+                category: ActivityCategory.flexibility,
+                durationMinutes: minutes,
+                caloriesBurned: calories,
+              );
+          setState(() => _completed = true);
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.category.color;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) => Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+            decoration: const BoxDecoration(
+              color: kSurfaceDark,
+              borderRadius:
+                  BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Icon(widget.category.icon, color: color, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.category.label,
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.close,
+                      color: kTextSecondary, size: 20),
+                ),
+              ],
+            ),
+          ),
+          if (_loading)
+            const Expanded(
+              child: Center(
+                  child: CircularProgressIndicator(color: kNeonYellow)),
+            )
+          else
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                children: [
+                  if (_playing != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: YoutubePlayer(
+                        controller: _playerController!,
+                        showVideoProgressIndicator: true,
+                        progressIndicatorColor: kNeonYellow,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_completed)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: Colors.green
+                                  .withValues(alpha: 0.35)),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle,
+                                color: Colors.greenAccent, size: 16),
+                            SizedBox(width: 6),
+                            Text('Logged to activities!',
+                                style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
+                          ],
+                        ),
+                      )
+                    else
+                      ElevatedButton.icon(
+                        onPressed: _markComplete,
+                        icon: const Icon(Icons.check_circle_outline,
+                            size: 16),
+                        label: const Text('Mark as Complete'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 42),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    const Divider(color: Color(0xFF2A3550)),
+                    const SizedBox(height: 8),
+                  ],
+                  const Text('More videos:',
+                      style: TextStyle(
+                          color: kTextSecondary, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  ..._videos.map((v) => _VideoResultTile(
+                        video: v,
+                        onTap: () => _playVideo(v),
+                      )),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

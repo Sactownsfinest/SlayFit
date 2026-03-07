@@ -59,6 +59,9 @@ dependencies:
   # Device timezone detection (required for correct notification scheduling)
   flutter_timezone: ^3.0.0
 
+  # Text-to-speech (AI Coach voice output)
+  flutter_tts: ^4.0.2
+
 dependency_overrides:
   # Force older iOS platform packages to avoid objective_c >=6.x build hook
   # that fails on Windows paths with spaces (C:\Users\Dan Maeon\...)

@@ -3,15 +3,34 @@ import 'package:http/http.dart' as http;
 
 const _kYouTubeApiKey = 'AIzaSyBNn8BP8C2URuDBZLgpFvp-WYhM8q8VRjY';
 
-class YouTubeService {
-  // In-memory cache so we don't re-query for the same workout each session
-  static final _cache = <String, String>{};
+class YouTubeVideo {
+  final String videoId;
+  final String title;
+  final String channelTitle;
 
-  static Future<String?> searchVideoId(String query, {int? durationMinutes}) async {
-    final cacheKey = '$query|${durationMinutes ?? ""}';
-    if (_cache.containsKey(cacheKey)) return _cache[cacheKey];
+  const YouTubeVideo({
+    required this.videoId,
+    required this.title,
+    required this.channelTitle,
+  });
+
+  String get thumbnailUrl =>
+      'https://img.youtube.com/vi/$videoId/mqdefault.jpg';
+}
+
+class YouTubeService {
+  static final _cache = <String, List<YouTubeVideo>>{};
+
+  /// Returns up to [maxResults] videos matching [query].
+  static Future<List<YouTubeVideo>> searchVideos(
+    String query, {
+    int maxResults = 5,
+    int? durationMinutes,
+  }) async {
+    final cacheKey = '$query|$maxResults|${durationMinutes ?? ""}';
+    if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
+
     try {
-      // Map duration to YouTube's videoDuration filter for better matches
       String durationFilter = '';
       if (durationMinutes != null) {
         if (durationMinutes <= 4) {
@@ -28,23 +47,39 @@ class YouTubeService {
         '&q=${Uri.encodeComponent(query)}'
         '&type=video'
         '&videoEmbeddable=true'
-        '&maxResults=1'
+        '&maxResults=$maxResults'
         '$durationFilter'
         '&key=$_kYouTubeApiKey',
       );
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final items = data['items'] as List?;
-        if (items != null && items.isNotEmpty) {
-          final id = items[0]['id']['videoId'] as String?;
-          if (id != null) {
-            _cache[cacheKey] = id;
-            return id;
-          }
-        }
+        final items = data['items'] as List? ?? [];
+        final videos = items
+            .map((item) {
+              final id = item['id']['videoId'] as String?;
+              if (id == null) return null;
+              final snippet = item['snippet'] as Map<String, dynamic>;
+              return YouTubeVideo(
+                videoId: id,
+                title: snippet['title'] as String? ?? '',
+                channelTitle: snippet['channelTitle'] as String? ?? '',
+              );
+            })
+            .whereType<YouTubeVideo>()
+            .toList();
+        _cache[cacheKey] = videos;
+        return videos;
       }
     } catch (_) {}
-    return null;
+    return [];
+  }
+
+  /// Legacy single-result lookup (used by existing code).
+  static Future<String?> searchVideoId(String query,
+      {int? durationMinutes}) async {
+    final results =
+        await searchVideos(query, maxResults: 1, durationMinutes: durationMinutes);
+    return results.isNotEmpty ? results.first.videoId : null;
   }
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../providers/food_provider.dart';
 import '../providers/recipe_provider.dart';
@@ -22,6 +23,19 @@ class FoodLogScreen extends ConsumerWidget {
           snap: true,
           title: const Text('Food Log'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.camera_alt_outlined, color: kNeonYellow),
+              tooltip: 'Scan your plate',
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: kSurfaceDark,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (_) => const _FoodScanSheet(),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Center(
@@ -1797,6 +1811,447 @@ class _FavoriteTile extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Food Scan Sheet (AI plate scanner) ────────────────────────────────────────
+
+enum _ScanStep { idle, loading, results, error }
+
+class _FoodScanSheet extends ConsumerStatefulWidget {
+  const _FoodScanSheet();
+
+  @override
+  ConsumerState<_FoodScanSheet> createState() => _FoodScanSheetState();
+}
+
+class _FoodScanSheetState extends ConsumerState<_FoodScanSheet> {
+  _ScanStep _step = _ScanStep.idle;
+  List<Map<String, dynamic>> _detected = [];
+  MealType _meal = MealType.lunch;
+  String _errorMsg = '';
+
+  Future<void> _scan(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 1024,
+    );
+    if (image == null || !mounted) return;
+
+    setState(() => _step = _ScanStep.loading);
+    try {
+      final bytes = await image.readAsBytes();
+      final b64 = base64Encode(bytes);
+      const apiKey = 'AIzaSyAw1iPUeIaQumZ8o0ANW_qQtPS3O3DU7A0';
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$apiKey',
+      );
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'inlineData': {'mimeType': 'image/jpeg', 'data': b64}
+                },
+                {
+                  'text': 'Identify every distinct food item visible in this photo. '
+                      'For each item, estimate the macros for the visible portion. '
+                      'Respond ONLY with a JSON object — no markdown, no explanation:\n'
+                      '{"items":[{"name":"Food Name","calories":300,"protein":25,"carbs":30,"fat":10,"servingSize":1,"servingUnit":"serving"}]}\n'
+                      'If no food is visible, return {"items":[]}.',
+                }
+              ]
+            }
+          ],
+          'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 512},
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        throw Exception('API ${response.statusCode}: ${response.body}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final text =
+          data['candidates'][0]['content']['parts'][0]['text'] as String;
+      String jsonText = text.trim();
+      final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(jsonText);
+      if (jsonMatch != null) jsonText = jsonMatch.group(0)!;
+
+      final parsed = jsonDecode(jsonText) as Map<String, dynamic>;
+      final items = (parsed['items'] as List).cast<Map<String, dynamic>>();
+      if (items.isEmpty) {
+        setState(() {
+          _errorMsg = 'No food detected. Try a clearer or closer shot.';
+          _step = _ScanStep.error;
+        });
+      } else {
+        setState(() {
+          _detected = items;
+          _step = _ScanStep.results;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMsg = 'Scan failed: $e';
+        _step = _ScanStep.error;
+      });
+    }
+  }
+
+  void _logAll() {
+    final now = DateTime.now();
+    for (var i = 0; i < _detected.length; i++) {
+      final food = _detected[i];
+      ref.read(foodLogProvider.notifier).addEntry(FoodEntry(
+            id: '${now.millisecondsSinceEpoch}_scan_$i',
+            name: food['name'] as String,
+            calories: (food['calories'] as num).toDouble(),
+            protein: (food['protein'] as num).toDouble(),
+            carbs: (food['carbs'] as num).toDouble(),
+            fat: (food['fat'] as num).toDouble(),
+            servingSize: (food['servingSize'] as num?)?.toDouble() ?? 1,
+            servingUnit: (food['servingUnit'] as String?) ?? 'serving',
+            meal: _meal,
+            loggedAt: now,
+          ));
+    }
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: kCardDark,
+        content: Text(
+          '${_detected.length} item(s) logged to ${_meal.name}!',
+          style: const TextStyle(color: kTextPrimary),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.92,
+      builder: (_, controller) => Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 12, bottom: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A3550),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                const Icon(Icons.camera_alt_outlined,
+                    color: kNeonYellow, size: 22),
+                const SizedBox(width: 10),
+                const Text('Scan Your Plate',
+                    style: TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    )),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, color: kTextSecondary),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+              children: [
+                if (_step == _ScanStep.idle) _buildIdle(),
+                if (_step == _ScanStep.loading) _buildLoading(),
+                if (_step == _ScanStep.error) _buildError(),
+                if (_step == _ScanStep.results) _buildResults(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdle() => Column(
+        children: [
+          const SizedBox(height: 8),
+          const Text(
+            'Take a photo or pick one from your gallery.\nAI will identify the food and estimate macros.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: kTextSecondary, fontSize: 14, height: 1.5),
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              Expanded(
+                child: _ScanSourceButton(
+                  icon: Icons.camera_alt,
+                  label: 'Camera',
+                  onTap: () => _scan(ImageSource.camera),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _ScanSourceButton(
+                  icon: Icons.photo_library_outlined,
+                  label: 'Gallery',
+                  onTap: () => _scan(ImageSource.gallery),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  Widget _buildLoading() => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Column(
+          children: [
+            CircularProgressIndicator(color: kNeonYellow, strokeWidth: 2.5),
+            SizedBox(height: 20),
+            Text('Analysing your plate...',
+                style: TextStyle(color: kTextSecondary, fontSize: 14)),
+          ],
+        ),
+      );
+
+  Widget _buildError() => Column(
+        children: [
+          const SizedBox(height: 24),
+          const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+          const SizedBox(height: 12),
+          Text(_errorMsg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: kTextSecondary, fontSize: 14)),
+          const SizedBox(height: 20),
+          TextButton(
+            onPressed: () => setState(() => _step = _ScanStep.idle),
+            child: const Text('Try Again',
+                style: TextStyle(
+                    color: kNeonYellow, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      );
+
+  Widget _buildResults() {
+    final totalCal =
+        _detected.fold(0.0, (s, f) => s + (f['calories'] as num));
+    final totalProt =
+        _detected.fold(0.0, (s, f) => s + (f['protein'] as num));
+    final totalCarbs =
+        _detected.fold(0.0, (s, f) => s + (f['carbs'] as num));
+    final totalFat = _detected.fold(0.0, (s, f) => s + (f['fat'] as num));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: kCardDark,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _MacroStat('${totalCal.toInt()}', 'kcal', kNeonYellow),
+              _MacroStat(
+                  '${totalProt.toInt()}g', 'Protein', Colors.greenAccent),
+              _MacroStat('${totalCarbs.toInt()}g', 'Carbs',
+                  const Color(0xFF60A5FA)),
+              _MacroStat('${totalFat.toInt()}g', 'Fat',
+                  const Color(0xFFFBBF24)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text('${_detected.length} item(s) detected',
+            style: const TextStyle(
+                color: kTextSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        ..._detected.map((food) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: kCardDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF2A3550)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(food['name'] as String,
+                            style: const TextStyle(
+                                color: kTextPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14)),
+                        const SizedBox(height: 2),
+                        Text(
+                          'P: ${(food['protein'] as num).toInt()}g  C: ${(food['carbs'] as num).toInt()}g  F: ${(food['fat'] as num).toInt()}g',
+                          style: const TextStyle(
+                              color: kTextSecondary, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${(food['calories'] as num).toInt()} kcal',
+                    style: const TextStyle(
+                        color: kNeonYellow,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14),
+                  ),
+                ],
+              ),
+            )),
+        const SizedBox(height: 16),
+        const Text('Log to:',
+            style: TextStyle(color: kTextSecondary, fontSize: 13)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: MealType.values.map((m) {
+            final selected = m == _meal;
+            return GestureDetector(
+              onTap: () => setState(() => _meal = m),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected ? kNeonYellow : const Color(0xFF2A3550),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  m.name[0].toUpperCase() + m.name.substring(1),
+                  style: TextStyle(
+                    color: selected ? Colors.black : kTextSecondary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => setState(() => _step = _ScanStep.idle),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF2A3550)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Re-scan',
+                    style: TextStyle(color: kTextSecondary)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton(
+                onPressed: _logAll,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kNeonYellow,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Log All',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ScanSourceButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _ScanSourceButton(
+      {required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        decoration: BoxDecoration(
+          color: kCardDark,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: kNeonYellow, size: 32),
+            const SizedBox(height: 8),
+            Text(label,
+                style: const TextStyle(
+                    color: kTextPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MacroStat extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color color;
+  const _MacroStat(this.value, this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
+        Text(label,
+            style:
+                const TextStyle(color: kTextSecondary, fontSize: 11)),
+      ],
     );
   }
 }

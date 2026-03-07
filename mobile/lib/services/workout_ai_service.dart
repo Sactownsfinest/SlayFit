@@ -71,6 +71,42 @@ class AiWorkoutPlan {
 }
 
 class WorkoutAiService {
+  /// Converts a free-text user description into a targeted YouTube search query.
+  static Future<String> generateSearchQuery(String description) async {
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
+    final response = await http
+        .post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_kGroqApiKey',
+          },
+          body: jsonEncode({
+            'model': _kModel,
+            'messages': [
+              {
+                'role': 'system',
+                'content':
+                    'You are a fitness assistant. Convert the user\'s workout request into a specific YouTube search query. '
+                    'Make it highly targeted: include the workout type, duration if mentioned, difficulty (beginner/intermediate), '
+                    'and any health constraints (low impact, arthritis-friendly, no jumping, back-safe, etc.). '
+                    'Respond with ONLY the search query string — no quotes, no explanation.',
+              },
+              {'role': 'user', 'content': description},
+            ],
+            'max_tokens': 60,
+            'temperature': 0.3,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode != 200) {
+      throw Exception('api_error_${response.statusCode}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (data['choices'][0]['message']['content'] as String).trim();
+  }
+
   static Future<AiWorkoutPlan> generatePlan({
     required String userName,
     required double? currentWeightKg,
