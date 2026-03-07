@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZIPMiddleware
 from app.core.database import engine, Base
 from app.models.user import User, UserProfile, FoodLog, WeightEntry, Activity, DiaryEntry
-from app.api import users, food, weight, activities, diary, auth
+from app.api import users, food, weight, activities, diary, auth, coach
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -40,6 +40,7 @@ app.include_router(food.router, prefix="/api/food", tags=["Food Logging"])
 app.include_router(weight.router, prefix="/api/weight", tags=["Weight Tracking"])
 app.include_router(activities.router, prefix="/api/activities", tags=["Activities"])
 app.include_router(diary.router, prefix="/api/diary", tags=["Diary"])
+app.include_router(coach.router, prefix="/api/coach", tags=["AI Coach"])
 
 if __name__ == "__main__":
     import uvicorn

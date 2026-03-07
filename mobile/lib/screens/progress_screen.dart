@@ -1,13 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/weight_provider.dart';
-import '../providers/food_provider.dart';
 import '../providers/activity_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/water_provider.dart';
+import '../providers/streak_provider.dart';
+import '../providers/measurements_provider.dart';
+import 'body_scan_screen.dart';
+import '../providers/records_provider.dart';
+import '../providers/workout_provider.dart';
 import '../main.dart';
 
 class ProgressScreen extends ConsumerWidget {
@@ -16,14 +23,21 @@ class ProgressScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weight = ref.watch(weightProvider);
-    final food = ref.watch(foodLogProvider);
+    final streak = ref.watch(streakProvider);
+    final profile = ref.watch(userProfileProvider);
 
     return CustomScrollView(
       slivers: [
-        const SliverAppBar(
+        SliverAppBar(
           floating: true,
           snap: true,
-          title: Text('Progress'),
+          title: const Text('Progress'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.share_outlined, color: kNeonYellow),
+              onPressed: () => _shareProgress(weight, streak, profile),
+            ),
+          ],
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
@@ -31,18 +45,52 @@ class ProgressScreen extends ConsumerWidget {
             delegate: SliverChildListDelegate([
               _WeightStatsRow(weight: weight),
               const SizedBox(height: 16),
+              _BMICard(weight: weight, profile: profile),
+              const SizedBox(height: 16),
               _WeightChartCard(weight: weight),
               const SizedBox(height: 16),
               _LogWeightButton(weight: weight),
               const SizedBox(height: 16),
-              _CalorieTrendCard(food: food),
+              const _MeasurementsCard(),
+              const SizedBox(height: 16),
+              const _ProgressPhotosCard(),
+              const SizedBox(height: 16),
+              const _PersonalRecordsCard(),
+              const SizedBox(height: 16),
+              const _MuscleVolumeCard(),
+              const SizedBox(height: 16),
+              const _CalorieTrendCard(),
               const SizedBox(height: 16),
               const _WeeklyInsightsCard(),
+              const SizedBox(height: 16),
+              _ShareProgressButton(weight: weight, streak: streak, profile: profile),
             ]),
           ),
         ),
       ],
     );
+  }
+
+  void _shareProgress(
+      WeightState weight, StreakState streak, UserProfile profile) {
+    final name = profile.name.split(' ').first;
+    final lines = <String>['🔥 $name\'s SlayFit Progress', ''];
+
+    if (weight.latest != null) {
+      final lbs = (weight.latest!.weightKg * 2.20462).toStringAsFixed(1);
+      lines.add('⚖️  Current weight: $lbs lbs');
+    }
+    if (weight.totalLost != null && weight.totalLost! > 0.1) {
+      final lostLbs = (weight.totalLost! * 2.20462).toStringAsFixed(1);
+      lines.add('📉 Lost: $lostLbs lbs');
+    }
+    if (streak.currentStreak > 0) {
+      lines.add('🔥 ${streak.currentStreak}-day logging streak');
+    }
+    lines.add('');
+    lines.add('Tracked with SlayFit 💪');
+
+    Share.share(lines.join('\n'));
   }
 }
 
@@ -183,8 +231,8 @@ class _WeightChartCard extends StatelessWidget {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => FlLine(
-                    color: const Color(0xFF2A3550),
+                  getDrawingHorizontalLine: (_) => const FlLine(
+                    color: Color(0xFF2A3550),
                     strokeWidth: 1,
                   ),
                 ),
@@ -564,15 +612,59 @@ class _InsightTile extends StatelessWidget {
   }
 }
 
-class _CalorieTrendCard extends StatelessWidget {
-  final FoodLogState food;
-  const _CalorieTrendCard({required this.food});
+class _CalorieTrendCard extends ConsumerStatefulWidget {
+  const _CalorieTrendCard();
+
+  @override
+  ConsumerState<_CalorieTrendCard> createState() => _CalorieTrendCardState();
+}
+
+class _CalorieTrendCardState extends ConsumerState<_CalorieTrendCard> {
+  // Index 0 = 6 days ago, index 6 = today
+  final List<double> _dailyCalories = List.filled(7, 0);
+  final List<String> _dayLabels = List.filled(7, '');
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+
+    for (int i = 6; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final key =
+          'food_log_${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final json = prefs.getString(key);
+      double dayCals = 0;
+      if (json != null) {
+        final List list = jsonDecode(json);
+        for (final item in list) {
+          dayCals += (item['calories'] as num).toDouble();
+        }
+      }
+      final idx = 6 - i;
+      _dailyCalories[idx] = dayCals;
+      _dayLabels[idx] = _shortDay(date.weekday);
+    }
+
+    if (mounted) setState(() => _loaded = true);
+  }
+
+  String _shortDay(int weekday) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[weekday - 1];
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Show 7-day placeholder bars (today is last bar with real data)
-    final todayCalories = food.totalCalories;
-    final sampleData = [1450.0, 1820.0, 1600.0, 1950.0, 1380.0, 1700.0, todayCalories];
+    final maxY = _dailyCalories.reduce((a, b) => a > b ? a : b);
+    final chartMax = (maxY < 500 ? 2000 : maxY * 1.3).ceilToDouble();
+    final goal = ref.watch(userProfileProvider).dailyCalorieGoal.toDouble();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -583,60 +675,865 @@ class _CalorieTrendCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('7-Day Calories',
-              style: TextStyle(
-                color: kTextPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              )),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('7-Day Calories',
+                  style: TextStyle(
+                    color: kTextPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  )),
+              if (_loaded)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: kNeonYellow.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Goal: ${goal.toInt()} kcal',
+                    style: const TextStyle(
+                        color: kNeonYellow,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
+          if (!_loaded)
+            const SizedBox(
+              height: 140,
+              child: Center(
+                  child: CircularProgressIndicator(color: kNeonYellow)),
+            )
+          else
+            SizedBox(
+              height: 140,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: chartMax,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (_) => const FlLine(
+                      color: Color(0xFF2A3550),
+                      strokeWidth: 1,
+                    ),
+                    checkToShowHorizontalLine: (val) =>
+                        val == goal || val == 0,
+                    getDrawingVerticalLine: (_) => const FlLine(
+                      color: Colors.transparent,
+                    ),
+                  ),
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      HorizontalLine(
+                        y: goal,
+                        color: kNeonYellow.withValues(alpha: 0.4),
+                        strokeWidth: 1,
+                        dashArray: [6, 4],
+                      ),
+                    ],
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (val, _) => Text(
+                          _dayLabels[val.toInt()],
+                          style: const TextStyle(
+                              color: kTextSecondary, fontSize: 10),
+                        ),
+                      ),
+                    ),
+                  ),
+                  barGroups: _dailyCalories.asMap().entries.map((e) {
+                    final isToday = e.key == 6;
+                    final overGoal = e.value > goal && goal > 0;
+                    final barColor = isToday
+                        ? (overGoal ? Colors.redAccent : kNeonYellow)
+                        : (e.value > 0
+                            ? const Color(0xFF4A5568)
+                            : const Color(0xFF2A3550));
+                    return BarChartGroupData(
+                      x: e.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: e.value > 0 ? e.value : 0,
+                          color: barColor,
+                          width: 18,
+                          borderRadius: BorderRadius.circular(4),
+                          backDrawRodData: BackgroundBarChartRodData(
+                            show: true,
+                            toY: chartMax,
+                            color: const Color(0xFF1A2235),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Share Progress Button ─────────────────────────────────────────────────────
+
+class _ShareProgressButton extends StatelessWidget {
+  final WeightState weight;
+  final StreakState streak;
+  final UserProfile profile;
+
+  const _ShareProgressButton({
+    required this.weight,
+    required this.streak,
+    required this.profile,
+  });
+
+  void _share() {
+    final name = profile.name.split(' ').first;
+    final lines = <String>['🔥 $name\'s SlayFit Progress', ''];
+
+    if (weight.latest != null) {
+      final lbs = (weight.latest!.weightKg * 2.20462).toStringAsFixed(1);
+      lines.add('⚖️  Current weight: $lbs lbs');
+    }
+    if (weight.totalLost != null && weight.totalLost! > 0.1) {
+      final lostLbs = (weight.totalLost! * 2.20462).toStringAsFixed(1);
+      lines.add('📉 Lost: $lostLbs lbs');
+    }
+    if (streak.currentStreak > 0) {
+      lines.add('🔥 ${streak.currentStreak}-day logging streak');
+    }
+    lines.add('');
+    lines.add('Tracked with SlayFit 💪');
+
+    Share.share(lines.join('\n'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _share,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: kNeonYellow,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.share_rounded, color: Colors.black, size: 20),
+            SizedBox(width: 10),
+            Text(
+              'Share My Progress',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── BMI Card ──────────────────────────────────────────────────────────────────
+
+class _BMICard extends ConsumerWidget {
+  final WeightState weight;
+  final UserProfile profile;
+  const _BMICard({required this.weight, required this.profile});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (weight.latest == null || profile.heightCm <= 0) {
+      return const SizedBox.shrink();
+    }
+    final h = profile.heightCm / 100;
+    final bmi = weight.latest!.weightKg / (h * h);
+    final Color color;
+    final String category;
+    if (bmi < 18.5) {
+      color = Colors.blueAccent;
+      category = 'Underweight';
+    } else if (bmi < 25) {
+      color = Colors.greenAccent;
+      category = 'Normal';
+    } else if (bmi < 30) {
+      color = kNeonYellow;
+      category = 'Overweight';
+    } else {
+      color = Colors.redAccent;
+      category = 'Obese';
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(bmi.toStringAsFixed(1),
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('BMI',
+                  style: TextStyle(
+                      color: kTextSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              Text(category,
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+            ],
+          ),
+          const Spacer(),
+          Text('Healthy: 18.5–24.9',
+              style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Measurements Card ─────────────────────────────────────────────────────────
+
+class _MeasurementsCard extends ConsumerWidget {
+  const _MeasurementsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = ref.watch(measurementsProvider);
+    final latest = m.latest;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Body Measurements',
+                  style: TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const BodyScanScreen()),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: kNeonYellow.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: kNeonYellow.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.document_scanner_outlined,
+                              color: kNeonYellow, size: 14),
+                          SizedBox(width: 4),
+                          Text('Scan',
+                              style: TextStyle(
+                                  color: kNeonYellow,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _showLogSheet(context, ref),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A3550),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add, color: kTextSecondary, size: 14),
+                          SizedBox(width: 4),
+                          Text('Log',
+                              style: TextStyle(
+                                  color: kTextSecondary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (latest == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text('No measurements logged yet.',
+                  style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            )
+          else ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (latest.waistCm != null)
+                  _MeasTile(
+                      label: 'Waist',
+                      value: '${latest.waistCm!.toStringAsFixed(1)} cm'),
+                if (latest.hipsCm != null)
+                  _MeasTile(
+                      label: 'Hips',
+                      value: '${latest.hipsCm!.toStringAsFixed(1)} cm'),
+                if (latest.chestCm != null)
+                  _MeasTile(
+                      label: 'Chest',
+                      value: '${latest.chestCm!.toStringAsFixed(1)} cm'),
+                if (latest.armsCm != null)
+                  _MeasTile(
+                      label: 'Arms',
+                      value: '${latest.armsCm!.toStringAsFixed(1)} cm'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showLogSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _LogMeasurementsSheet(ref: ref),
+    );
+  }
+}
+
+class _MeasTile extends StatelessWidget {
+  final String label;
+  final String value;
+  const _MeasTile({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value,
+              style: const TextStyle(
+                  color: kNeonYellow,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14)),
+          Text(label,
+              style:
+                  const TextStyle(color: kTextSecondary, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogMeasurementsSheet extends StatefulWidget {
+  final WidgetRef ref;
+  const _LogMeasurementsSheet({required this.ref});
+
+  @override
+  State<_LogMeasurementsSheet> createState() => _LogMeasurementsSheetState();
+}
+
+class _LogMeasurementsSheetState extends State<_LogMeasurementsSheet> {
+  final _waist = TextEditingController();
+  final _hips = TextEditingController();
+  final _chest = TextEditingController();
+  final _arms = TextEditingController();
+  final _bodyfat = TextEditingController();
+
+  @override
+  void dispose() {
+    _waist.dispose();
+    _hips.dispose();
+    _chest.dispose();
+    _arms.dispose();
+    _bodyfat.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final m = BodyMeasurement(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      date: DateTime.now(),
+      waistCm: double.tryParse(_waist.text),
+      hipsCm: double.tryParse(_hips.text),
+      chestCm: double.tryParse(_chest.text),
+      armsCm: double.tryParse(_arms.text),
+      bodyFatPercent: double.tryParse(_bodyfat.text),
+    );
+    widget.ref.read(measurementsProvider.notifier).addMeasurement(m);
+    Navigator.pop(context);
+  }
+
+  Widget _field(String label, TextEditingController ctrl) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: TextField(
+          controller: ctrl,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle:
+                const TextStyle(color: Color(0xFF8A9BB8)),
+            suffixText: label == 'Body Fat' ? '%' : 'cm',
+            suffixStyle:
+                const TextStyle(color: Color(0xFF8A9BB8)),
+            filled: true,
+            fillColor: const Color(0xFF1A2235),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Log Measurements',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18)),
+          const SizedBox(height: 20),
+          _field('Waist', _waist),
+          _field('Hips', _hips),
+          _field('Chest', _chest),
+          _field('Arms', _arms),
+          _field('Body Fat', _bodyfat),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _save,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: kNeonYellow,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              child: const Text('Save',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Progress Photos Card ──────────────────────────────────────────────────────
+
+class _ProgressPhotosCard extends StatefulWidget {
+  const _ProgressPhotosCard();
+
+  @override
+  State<_ProgressPhotosCard> createState() => _ProgressPhotosCardState();
+}
+
+class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
+  List<String> _paths = [];
+  static const _prefsKey = 'progress_photos';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_prefsKey) ?? [];
+    setState(() => _paths = raw);
+  }
+
+  Future<void> _addPhoto() async {
+    final picker = ImagePicker();
+    final xfile =
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (xfile == null) return;
+    final updated = [xfile.path, ..._paths];
+    setState(() => _paths = updated);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefsKey, updated);
+  }
+
+  Future<void> _removePhoto(int index) async {
+    final updated = [..._paths]..removeAt(index);
+    setState(() => _paths = updated);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefsKey, updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Progress Photos',
+                  style: TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+              GestureDetector(
+                onTap: _addPhoto,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: kNeonYellow.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: kNeonYellow.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined,
+                          color: kNeonYellow, size: 14),
+                      SizedBox(width: 4),
+                      Text('Add Photo',
+                          style: TextStyle(
+                              color: kNeonYellow,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_paths.isEmpty)
+            const Text('Tap "Add Photo" to track your transformation.',
+                style: TextStyle(color: kTextSecondary, fontSize: 13))
+          else
+            SizedBox(
+              height: 88,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _paths.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final file = File(_paths[i]);
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              _PhotoFullScreen(path: _paths[i])),
+                    ),
+                    onLongPress: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: kSurfaceDark,
+                          title: const Text('Remove photo?',
+                              style: TextStyle(color: Colors.white)),
+                          actions: [
+                            TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(ctx, false),
+                                child: const Text('Cancel')),
+                            TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(ctx, true),
+                                child: const Text('Remove',
+                                    style: TextStyle(
+                                        color: Colors.redAccent))),
+                          ],
+                        ),
+                      );
+                      if (ok == true) _removePhoto(i);
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(file,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                                width: 80,
+                                height: 80,
+                                color: kCardDark,
+                                child: const Icon(Icons.broken_image,
+                                    color: kTextSecondary),
+                              )),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PhotoFullScreen extends StatelessWidget {
+  final String path;
+  const _PhotoFullScreen({required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+          backgroundColor: Colors.black,
+          iconTheme: const IconThemeData(color: Colors.white)),
+      body: Center(
+        child: InteractiveViewer(
+          child: Image.file(File(path)),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Personal Records Card ─────────────────────────────────────────────────────
+
+class _PersonalRecordsCard extends ConsumerWidget {
+  const _PersonalRecordsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final records = ref.watch(recordsProvider);
+    if (records.isEmpty) return const SizedBox.shrink();
+
+    final top = records.take(5).toList();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.emoji_events, color: kNeonYellow, size: 18),
+              SizedBox(width: 8),
+              Text('Personal Records',
+                  style: TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...top.map((r) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(r.exerciseName,
+                          style: const TextStyle(
+                              color: kTextPrimary, fontSize: 13)),
+                    ),
+                    if (r.maxWeightKg != null)
+                      Text('${r.maxWeightKg!.toStringAsFixed(1)} kg × ${r.maxReps}',
+                          style: const TextStyle(
+                              color: kNeonYellow,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13))
+                    else
+                      Text('${r.maxReps} reps',
+                          style: const TextStyle(
+                              color: kNeonYellow,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13)),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Muscle Volume Card ────────────────────────────────────────────────────────
+
+// Maps keywords in exercise names to muscle groups
+String _muscleGroup(String exerciseName) {
+  final name = exerciseName.toLowerCase();
+  if (name.contains('push') || name.contains('chest') || name.contains('bench') || name.contains('dip')) return 'Chest';
+  if (name.contains('squat') || name.contains('lunge') || name.contains('glute') || name.contains('leg') || name.contains('deadlift') || name.contains('hip')) return 'Legs';
+  if (name.contains('row') || name.contains('pull') || name.contains('superman') || name.contains('back')) return 'Back';
+  if (name.contains('press') || name.contains('shoulder') || name.contains('overhead')) return 'Shoulders';
+  if (name.contains('curl') || name.contains('tricep') || name.contains('bicep') || name.contains('arm')) return 'Arms';
+  if (name.contains('plank') || name.contains('crunch') || name.contains('ab') || name.contains('core') || name.contains('mountain') || name.contains('dead bug') || name.contains('v-up') || name.contains('boat')) return 'Core';
+  if (name.contains('jack') || name.contains('burpee') || name.contains('high knee') || name.contains('jog') || name.contains('run') || name.contains('skater') || name.contains('cardio')) return 'Cardio';
+  return 'Other';
+}
+
+class _MuscleVolumeCard extends ConsumerWidget {
+  const _MuscleVolumeCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final history = ref.watch(workoutProvider).history;
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+
+    final Map<String, int> sets = {};
+    for (final session in history) {
+      if (session.date.isAfter(weekStart.subtract(const Duration(days: 1)))) {
+        for (final ex in session.exercises) {
+          final group = _muscleGroup(ex.name);
+          sets[group] = (sets[group] ?? 0) + ex.sets.length;
+        }
+      }
+    }
+
+    if (sets.isEmpty) return const SizedBox.shrink();
+
+    const order = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Other'];
+    final groups = order.where((g) => sets.containsKey(g)).toList();
+    final maxSets = sets.values.reduce((a, b) => a > b ? a : b).toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('This Week\'s Training',
+              style: TextStyle(
+                  color: kTextPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15)),
+          const SizedBox(height: 14),
           SizedBox(
             height: 140,
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 2500,
+                maxY: maxSets + 2,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => FlLine(
-                    color: const Color(0xFF2A3550),
-                    strokeWidth: 1,
-                  ),
+                  getDrawingHorizontalLine: (_) =>
+                      const FlLine(color: Color(0xFF2A3550), strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
                 titlesData: FlTitlesData(
-                  leftTitles:
-                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles:
-                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles:
-                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      getTitlesWidget: (val, _) {
-                        const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-                        return Text(days[val.toInt() % 7],
-                            style: const TextStyle(
-                                color: kTextSecondary, fontSize: 11));
+                      getTitlesWidget: (v, _) {
+                        final i = v.toInt();
+                        if (i < 0 || i >= groups.length) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(groups[i].substring(0, 3),
+                              style: const TextStyle(
+                                  color: kTextSecondary, fontSize: 9)),
+                        );
                       },
+                      reservedSize: 20,
                     ),
                   ),
                 ),
-                barGroups: sampleData.asMap().entries.map((e) {
-                  final isToday = e.key == 6;
+                barGroups: groups.asMap().entries.map((e) {
+                  final count = sets[e.value]!.toDouble();
+                  final isTop = count == maxSets;
                   return BarChartGroupData(
                     x: e.key,
                     barRods: [
                       BarChartRodData(
-                        toY: e.value,
-                        color: isToday ? kNeonYellow : const Color(0xFF2A3550),
+                        toY: count,
+                        color: isTop ? kNeonYellow : kNeonYellow.withValues(alpha: 0.35),
                         width: 18,
                         borderRadius: BorderRadius.circular(4),
                         backDrawRodData: BackgroundBarChartRodData(
                           show: true,
-                          toY: 2500,
+                          toY: maxSets + 2,
                           color: const Color(0xFF1A2235),
                         ),
                       ),

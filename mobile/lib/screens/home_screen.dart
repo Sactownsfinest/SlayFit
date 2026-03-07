@@ -23,8 +23,22 @@ class _HomeScreenState extends State<HomeScreen> {
     ActivityScreen(),
     ProgressScreen(),
     ProfileScreen(),
-    AiCoachScreen(),
   ];
+
+  void _openCoach() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const AiCoachScreen(),
+        transitionsBuilder: (_, animation, __, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,69 +47,88 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _selectedIndex,
         children: _screens,
       ),
+      floatingActionButton: _GlowingCoachFab(onTap: _openCoach),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: kSurfaceDark,
           border: Border(top: BorderSide(color: Color(0xFF2A3550), width: 1)),
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home,
-                  label: 'Home',
-                  index: 0,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-                _NavItem(
-                  icon: Icons.restaurant_outlined,
-                  activeIcon: Icons.restaurant,
-                  label: 'Food',
-                  index: 1,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-                _NavItem(
-                  icon: Icons.fitness_center_outlined,
-                  activeIcon: Icons.fitness_center,
-                  label: 'Activity',
-                  index: 2,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-                _NavItem(
-                  icon: Icons.trending_down_outlined,
-                  activeIcon: Icons.trending_down,
-                  label: 'Progress',
-                  index: 3,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-                _NavItem(
-                  icon: Icons.person_outline,
-                  activeIcon: Icons.person,
-                  label: 'Profile',
-                  index: 4,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-                _NavItem(
-                  icon: Icons.psychology_outlined,
-                  activeIcon: Icons.psychology,
-                  label: 'Coach',
-                  index: 5,
-                  selected: _selectedIndex,
-                  onTap: (i) => setState(() => _selectedIndex = i),
-                ),
-              ],
-            ),
-          ),
+        padding: EdgeInsets.fromLTRB(0, 8, 0, MediaQuery.of(context).viewPadding.bottom + 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home', index: 0, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.restaurant_outlined, activeIcon: Icons.restaurant, label: 'Food', index: 1, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.fitness_center_outlined, activeIcon: Icons.fitness_center, label: 'Activity', index: 2, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.trending_down_outlined, activeIcon: Icons.trending_down, label: 'Progress', index: 3, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile', index: 4, selected: _selectedIndex, onTap: (i) => setState(() => _selectedIndex = i)),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _GlowingCoachFab extends StatefulWidget {
+  final VoidCallback onTap;
+  const _GlowingCoachFab({required this.onTap});
+
+  @override
+  State<_GlowingCoachFab> createState() => _GlowingCoachFabState();
+}
+
+class _GlowingCoachFabState extends State<_GlowingCoachFab>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (_, child) => Container(
+          width: 62,
+          height: 62,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: kNeonYellow,
+            boxShadow: [
+              BoxShadow(
+                color: kNeonYellow.withValues(alpha: 0.55 * _pulse.value),
+                blurRadius: 18 + 12 * _pulse.value,
+                spreadRadius: 2 + 4 * _pulse.value,
+              ),
+              BoxShadow(
+                color: kNeonYellow.withValues(alpha: 0.25 * _pulse.value),
+                blurRadius: 36 + 20 * _pulse.value,
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: child,
+        ),
+        child: const Icon(Icons.bolt, color: Colors.black, size: 34),
       ),
     );
   }
@@ -140,8 +173,7 @@ class _NavItem extends StatelessWidget {
               style: TextStyle(
                 color: isActive ? kNeonYellow : kTextSecondary,
                 fontSize: 10,
-                fontWeight:
-                    isActive ? FontWeight.bold : FontWeight.normal,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ],
@@ -150,4 +182,3 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
-

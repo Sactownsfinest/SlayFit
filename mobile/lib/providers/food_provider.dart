@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'streak_provider.dart';
@@ -109,18 +110,38 @@ class FoodLogState {
       );
 }
 
-class FoodLogNotifier extends StateNotifier<FoodLogState> {
+class FoodLogNotifier extends StateNotifier<FoodLogState>
+    with WidgetsBindingObserver {
   final Ref _ref;
+  String _loadedDate = '';
+
   FoodLogNotifier(this._ref) : super(const FoodLogState()) {
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
-  String get _todayKey {
-    final now = DateTime.now();
-    return 'food_log_${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _todayDateStr() != _loadedDate) {
+      _load();
+    }
+  }
+
+  String _todayDateStr() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  String get _todayKey => 'food_log_${_todayDateStr()}';
+
   Future<void> _load() async {
+    _loadedDate = _todayDateStr();
     final prefs = await SharedPreferences.getInstance();
     final goal = prefs.getDouble('calorie_goal') ?? 2000;
     final json = prefs.getString(_todayKey);
@@ -161,6 +182,13 @@ class FoodLogNotifier extends StateNotifier<FoodLogState> {
   void removeEntry(String id) {
     state = state.copyWith(
       entries: state.entries.where((e) => e.id != id).toList(),
+    );
+    _save();
+  }
+
+  void updateEntry(FoodEntry updated) {
+    state = state.copyWith(
+      entries: state.entries.map((e) => e.id == updated.id ? updated : e).toList(),
     );
     _save();
   }

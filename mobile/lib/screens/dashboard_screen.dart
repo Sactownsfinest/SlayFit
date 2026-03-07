@@ -1,6 +1,6 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../providers/food_provider.dart';
 import '../providers/activity_provider.dart';
 import '../providers/weight_provider.dart';
@@ -54,13 +54,13 @@ class DashboardScreen extends ConsumerWidget {
             delegate: SliverChildListDelegate([
               _GreetingCard(weight: weight, profile: profile, streak: streak),
               const SizedBox(height: 16),
-              _CalorieRingCard(food: food, activity: activity),
+              _CalorieRingCard(food: food, activity: activity, health: health),
               const SizedBox(height: 16),
               _WaterCard(water: water),
               const SizedBox(height: 16),
               _MacrosCard(food: food, profile: profile),
               const SizedBox(height: 16),
-              _TodayActivityCard(activity: activity),
+              _TodayActivityCard(activity: activity, health: health),
               const SizedBox(height: 16),
               _StepsCard(health: health),
               const SizedBox(height: 16),
@@ -96,67 +96,57 @@ class _GreetingCard extends StatelessWidget {
         color: kCardDark,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$greeting, $firstName!',
-                  style: const TextStyle(color: kTextSecondary, fontSize: 13)),
-              const SizedBox(height: 4),
-              const Text('Keep Slaying Today!',
-                  style: TextStyle(
-                    color: kTextPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  )),
-            ],
-          ),
+          Text('$greeting, $firstName!',
+              style: const TextStyle(color: kTextSecondary, fontSize: 14)),
+          const SizedBox(height: 6),
+          const Text('Keep Slaying Today!',
+              style: TextStyle(
+                color: kTextPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              )),
+          const SizedBox(height: 12),
           Row(
             children: [
               if (streak.currentStreak > 0)
                 Container(
                   margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.orangeAccent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.local_fire_department, color: Colors.orangeAccent, size: 16),
-                      const SizedBox(width: 4),
+                      const Icon(Icons.local_fire_department, color: Colors.orangeAccent, size: 13),
+                      const SizedBox(width: 3),
                       Text(
-                        '${streak.currentStreak}',
-                        style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                        '${streak.currentStreak} day streak',
+                        style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w600, fontSize: 11),
                       ),
                     ],
                   ),
                 ),
               if (weight.latest != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: kNeonYellow.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+                    color: kNeonYellow.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: kNeonYellow.withValues(alpha: 0.25)),
                   ),
-                  child: Column(
-                    children: [
-                      Text(
-                        '${weight.latest!.weightKg.toStringAsFixed(1)} kg',
-                        style: const TextStyle(
-                          color: kNeonYellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const Text('current',
-                          style: TextStyle(color: kTextSecondary, fontSize: 10)),
-                    ],
+                  child: Text(
+                    '${(weight.latest!.weightKg * 2.20462).toStringAsFixed(1)} lbs',
+                    style: const TextStyle(
+                      color: kNeonYellow,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
             ],
@@ -170,17 +160,21 @@ class _GreetingCard extends StatelessWidget {
 class _CalorieRingCard extends StatelessWidget {
   final FoodLogState food;
   final ActivityState activity;
+  final HealthState health;
 
-  const _CalorieRingCard({required this.food, required this.activity});
+  const _CalorieRingCard({required this.food, required this.activity, required this.health});
 
   @override
   Widget build(BuildContext context) {
     final eaten = food.totalCalories;
     final goal = food.dailyCalorieGoal;
-    final burned = activity.todayCaloriesBurned;
-    final net = (eaten - burned).clamp(0, double.infinity);
-    final remaining = (goal - net).clamp(0, goal);
-    final progress = (net / goal).clamp(0.0, 1.0);
+    final fitbitBurned = health.permissionsGranted ? (health.todayCaloriesBurned ?? 0) : 0;
+    final burned = fitbitBurned > 0 ? fitbitBurned.toDouble() : activity.todayCaloriesBurned;
+    final deficit = burned - eaten;
+    final isDeficit = deficit > 0;
+    final netLabel = isDeficit ? '${deficit.abs().toInt()}' : '${deficit.abs().toInt()}';
+    final statusLabel = isDeficit ? 'deficit' : deficit == 0 ? 'on track' : 'surplus';
+    final statusColor = isDeficit ? const Color(0xFF4ADE80) : const Color(0xFFF87171);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -198,44 +192,38 @@ class _CalorieRingCard extends StatelessWidget {
               )),
           const SizedBox(height: 20),
           SizedBox(
-            height: 180,
+            height: 200,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                PieChart(
-                  PieChartData(
-                    startDegreeOffset: -90,
-                    sectionsSpace: 0,
-                    centerSpaceRadius: 65,
-                    sections: [
-                      PieChartSectionData(
-                        value: progress * 100,
-                        color: progress >= 1.0 ? Colors.redAccent : kNeonYellow,
-                        radius: 18,
-                        showTitle: false,
-                      ),
-                      PieChartSectionData(
-                        value: (1 - progress) * 100,
-                        color: const Color(0xFF2A3550),
-                        radius: 14,
-                        showTitle: false,
-                      ),
-                    ],
+                CustomPaint(
+                  size: const Size(200, 200),
+                  painter: _DualCalorieRingPainter(
+                    eaten: eaten,
+                    burned: burned,
+                    goal: goal,
                   ),
                 ),
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      remaining.toInt().toString(),
-                      style: const TextStyle(
-                        color: kTextPrimary,
-                        fontSize: 32,
+                      netLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 34,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Text('remaining',
-                        style: TextStyle(color: kTextSecondary, fontSize: 12)),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'goal: ${goal.toInt()} kcal',
+                      style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                    ),
                   ],
                 ),
               ],
@@ -246,17 +234,23 @@ class _CalorieRingCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _RingStat(
-                  label: 'Eaten',
-                  value: eaten.toInt().toString(),
-                  color: kNeonYellow),
+                label: 'Eaten',
+                value: eaten.toInt().toString(),
+                color: const Color(0xFFF87171),
+                dot: true,
+              ),
               _RingStat(
-                  label: 'Burned',
-                  value: burned.toInt().toString(),
-                  color: Colors.greenAccent),
+                label: 'Burned',
+                value: burned.toInt().toString(),
+                color: const Color(0xFF4ADE80),
+                dot: true,
+              ),
               _RingStat(
-                  label: 'Goal',
-                  value: goal.toInt().toString(),
-                  color: kTextSecondary),
+                label: 'Goal',
+                value: goal.toInt().toString(),
+                color: kTextSecondary,
+                dot: false,
+              ),
             ],
           ),
         ],
@@ -265,24 +259,108 @@ class _CalorieRingCard extends StatelessWidget {
   }
 }
 
+class _DualCalorieRingPainter extends CustomPainter {
+  final double eaten;
+  final double burned;
+  final double goal;
+
+  const _DualCalorieRingPainter({
+    required this.eaten,
+    required this.burned,
+    required this.goal,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 20;
+    const strokeWidth = 18.0;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    // Track (background)
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = const Color(0xFF2A3550)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+
+    // Burned arc — green, counter-clockwise from top
+    final burnedSweep = (burned / goal).clamp(0.0, 1.0) * 2 * math.pi;
+    if (burnedSweep > 0) {
+      canvas.drawArc(
+        rect,
+        -math.pi / 2,
+        -burnedSweep,
+        false,
+        Paint()
+          ..color = const Color(0xFF4ADE80)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Eaten arc — red, clockwise from top (drawn on top so overlap is visible)
+    final eatenSweep = (eaten / goal).clamp(0.0, 1.0) * 2 * math.pi;
+    if (eatenSweep > 0) {
+      canvas.drawArc(
+        rect,
+        -math.pi / 2,
+        eatenSweep,
+        false,
+        Paint()
+          ..color = const Color(0xFFF87171)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DualCalorieRingPainter old) =>
+      old.eaten != eaten || old.burned != burned || old.goal != goal;
+}
+
 class _RingStat extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
+  final bool dot;
 
-  const _RingStat(
-      {required this.label, required this.value, required this.color});
+  const _RingStat({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.dot = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(value,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            )),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (dot) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(value,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                )),
+          ],
+        ),
         Text(label,
             style: const TextStyle(color: kTextSecondary, fontSize: 11)),
       ],
@@ -392,10 +470,20 @@ class _MacroBar extends StatelessWidget {
 
 class _TodayActivityCard extends StatelessWidget {
   final ActivityState activity;
-  const _TodayActivityCard({required this.activity});
+  final HealthState health;
+  const _TodayActivityCard({required this.activity, required this.health});
 
   @override
   Widget build(BuildContext context) {
+    // Prefer Fitbit data when connected; fall back to manually logged activity
+    final calories = health.permissionsGranted && (health.todayCaloriesBurned ?? 0) > 0
+        ? health.todayCaloriesBurned!
+        : activity.todayCaloriesBurned.toInt();
+    final minutes = health.permissionsGranted && (health.todayActiveMinutes ?? 0) > 0
+        ? health.todayActiveMinutes!
+        : activity.todayMinutes;
+    final source = health.permissionsGranted ? 'Fitbit' : 'Logged';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -408,7 +496,7 @@ class _TodayActivityCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.greenAccent.withValues(alpha:0.15),
+              color: Colors.greenAccent.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.local_fire_department,
@@ -419,11 +507,11 @@ class _TodayActivityCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Activity Today',
-                    style: TextStyle(color: kTextSecondary, fontSize: 12)),
+                Text('Activity Today · $source',
+                    style: const TextStyle(color: kTextSecondary, fontSize: 12)),
                 const SizedBox(height: 4),
                 Text(
-                  '${activity.todayCaloriesBurned.toInt()} kcal burned',
+                  '$calories kcal burned',
                   style: const TextStyle(
                     color: kTextPrimary,
                     fontWeight: FontWeight.bold,
@@ -434,7 +522,7 @@ class _TodayActivityCard extends StatelessWidget {
             ),
           ),
           Text(
-            '${activity.todayMinutes} min',
+            '$minutes min',
             style: const TextStyle(
               color: Colors.greenAccent,
               fontWeight: FontWeight.bold,
@@ -680,14 +768,46 @@ class _StepsCard extends ConsumerWidget {
             if (health.latestWeightKg != null) ...[
               const SizedBox(height: 10),
               Text(
-                'Scale: ${health.latestWeightKg!.toStringAsFixed(1)} kg',
+                'Scale: ${(health.latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs',
                 style: const TextStyle(color: kTextSecondary, fontSize: 12),
               ),
             ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (health.errorMessage != null)
+                  Expanded(
+                    child: Text(
+                      health.errorMessage!,
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+                    ),
+                  )
+                else if (health.isLoading)
+                  const Text('Syncing...', style: TextStyle(color: kTextSecondary, fontSize: 11))
+                else
+                  const Text('Fitbit connected', style: TextStyle(color: Color(0xFF34D399), fontSize: 11)),
+                GestureDetector(
+                  onTap: health.errorMessage != null && health.errorMessage!.contains('expired')
+                      ? () => ref.read(healthProvider.notifier).requestPermissions()
+                      : () => ref.read(healthProvider.notifier).fetchData(),
+                  child: Text(
+                    health.errorMessage != null && health.errorMessage!.contains('expired')
+                        ? 'Reconnect'
+                        : 'Sync now',
+                    style: const TextStyle(
+                      color: Color(0xFF34D399),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ] else ...[
             const SizedBox(height: 8),
             const Text(
-              'Connect Health Connect to sync steps from Fitbit, Garmin, or your smart scale.',
+              'Connect Fitbit for real-time steps and weight tracking.',
               style: TextStyle(color: kTextSecondary, fontSize: 12, height: 1.4),
             ),
           ],

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:\\\\Users\\\\Dan Maeon\\\\flutter\\\\bin\\\\flutter.bat\" pub get)",
+      "Bash(\"C:\\\\Users\\\\Dan Maeon\\\\flutter\\\\bin\\\\flutter.bat\" build apk --debug)"
+    ]
+  }
+}

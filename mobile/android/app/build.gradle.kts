@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.slayfit.slayfit"
     compileSdk = flutter.compileSdkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -24,7 +25,7 @@ android {
         applicationId = "com.slayfit.slayfit"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 28  // Health Connect requires Android 9+
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

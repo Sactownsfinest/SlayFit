@@ -10,6 +10,7 @@ import '../providers/streak_provider.dart';
 import '../providers/water_provider.dart';
 import '../services/notification_service.dart';
 import '../providers/health_provider.dart';
+import '../providers/measurements_provider.dart';
 
 String _fmtWeight(double kg, bool metric) =>
     metric ? '${kg.toStringAsFixed(1)} kg' : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
@@ -289,8 +290,14 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
 
-              // Health Connect
-              _SectionHeader('HEALTH CONNECT'),
+              // Measurements
+              _SectionHeader('MEASUREMENTS'),
+              const SizedBox(height: 8),
+              _MeasurementsSummaryCard(),
+              const SizedBox(height: 20),
+
+              // Fitbit
+              _SectionHeader('FITBIT'),
               const SizedBox(height: 8),
               _HealthConnectCard(health: health),
               const SizedBox(height: 20),
@@ -966,6 +973,167 @@ class _AchievementBadge extends StatelessWidget {
   }
 }
 
+class _MeasurementsSummaryCard extends ConsumerStatefulWidget {
+  const _MeasurementsSummaryCard();
+
+  @override
+  ConsumerState<_MeasurementsSummaryCard> createState() => _MeasurementsSummaryCardState();
+}
+
+class _MeasurementsSummaryCardState extends ConsumerState<_MeasurementsSummaryCard> {
+  final _waistCtrl = TextEditingController();
+  final _hipsCtrl = TextEditingController();
+  final _chestCtrl = TextEditingController();
+  final _armsCtrl = TextEditingController();
+  final _bodyFatCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _waistCtrl.dispose();
+    _hipsCtrl.dispose();
+    _chestCtrl.dispose();
+    _armsCtrl.dispose();
+    _bodyFatCtrl.dispose();
+    super.dispose();
+  }
+
+  void _showAddDialog() {
+    _waistCtrl.clear();
+    _hipsCtrl.clear();
+    _chestCtrl.clear();
+    _armsCtrl.clear();
+    _bodyFatCtrl.clear();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Log Measurements', style: TextStyle(color: kTextPrimary)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MeasureField(label: 'Waist (cm)', ctrl: _waistCtrl),
+              _MeasureField(label: 'Hips (cm)', ctrl: _hipsCtrl),
+              _MeasureField(label: 'Chest (cm)', ctrl: _chestCtrl),
+              _MeasureField(label: 'Arms (cm)', ctrl: _armsCtrl),
+              _MeasureField(label: 'Body Fat (%)', ctrl: _bodyFatCtrl),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          TextButton(
+            onPressed: () {
+              final m = BodyMeasurement(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                date: DateTime.now(),
+                waistCm: double.tryParse(_waistCtrl.text),
+                hipsCm: double.tryParse(_hipsCtrl.text),
+                chestCm: double.tryParse(_chestCtrl.text),
+                armsCm: double.tryParse(_armsCtrl.text),
+                bodyFatPercent: double.tryParse(_bodyFatCtrl.text),
+              );
+              ref.read(measurementsProvider.notifier).addMeasurement(m);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save', style: TextStyle(color: kNeonYellow)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final measurements = ref.watch(measurementsProvider);
+    final latest = measurements.latest;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: kCardDark, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (latest == null)
+            Center(
+              child: Column(
+                children: [
+                  const Text('No measurements logged yet', style: TextStyle(color: kTextSecondary, fontSize: 13)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _showAddDialog,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Log Measurements'),
+                    style: ElevatedButton.styleFrom(backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Last logged ${latest.date.month}/${latest.date.day}/${latest.date.year}',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                ),
+                GestureDetector(
+                  onTap: _showAddDialog,
+                  child: const Text('+ Add', style: TextStyle(color: kNeonYellow, fontSize: 13)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                if (latest.waistCm != null) _measureTile('Waist', '${latest.waistCm!.toStringAsFixed(1)} cm'),
+                if (latest.hipsCm != null) _measureTile('Hips', '${latest.hipsCm!.toStringAsFixed(1)} cm'),
+                if (latest.chestCm != null) _measureTile('Chest', '${latest.chestCm!.toStringAsFixed(1)} cm'),
+                if (latest.armsCm != null) _measureTile('Arms', '${latest.armsCm!.toStringAsFixed(1)} cm'),
+                if (latest.bodyFatPercent != null) _measureTile('Body Fat', '${latest.bodyFatPercent!.toStringAsFixed(1)}%'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+Widget _measureTile(String label, String value) => Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    Text(label, style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+    Text(value, style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+  ],
+);
+
+class _MeasureField extends StatelessWidget {
+  final String label;
+  final TextEditingController ctrl;
+  const _MeasureField({required this.label, required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextField(
+        controller: ctrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(color: kTextPrimary),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: kTextSecondary),
+          border: const OutlineInputBorder(),
+          enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF2A3550))),
+          focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: kNeonYellow)),
+        ),
+      ),
+    );
+  }
+}
+
 class _HealthConnectCard extends ConsumerWidget {
   final HealthState health;
   const _HealthConnectCard({required this.health});
@@ -1022,8 +1190,8 @@ class _HealthConnectCard extends ConsumerWidget {
                       ),
                       Text(
                         connected
-                            ? 'Syncing steps & weight from Health Connect'
-                            : 'Sync Fitbit, Garmin, smart scales & more',
+                            ? 'Syncing steps & weight from Fitbit'
+                            : 'Connect your Fitbit for real-time steps & weight',
                         style: const TextStyle(color: kTextSecondary, fontSize: 12),
                       ),
                     ],
@@ -1056,7 +1224,7 @@ class _HealthConnectCard extends ConsumerWidget {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                             )
                           : const Icon(Icons.link, size: 16),
-                      label: const Text('Connect Health Data'),
+                      label: const Text('Connect Fitbit'),
                     ),
                   )
                 else ...[
@@ -1101,6 +1269,10 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
   TimeOfDay _lunchTime = const TimeOfDay(hour: 12, minute: 0);
   bool _eveningEnabled = false;
   TimeOfDay _eveningTime = const TimeOfDay(hour: 20, minute: 0);
+  bool _waterEnabled = false;
+  bool _moveEnabled = false;
+  bool _missedLogEnabled = false;
+  TimeOfDay _missedLogTime = const TimeOfDay(hour: 21, minute: 0);
 
   @override
   void initState() {
@@ -1121,6 +1293,14 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
         hour: prefs.getInt('evening_reminder_hour') ?? 20,
         minute: prefs.getInt('evening_reminder_minute') ?? 0,
       );
+      _waterEnabled = prefs.getBool('water_reminder_enabled') ?? false;
+      _moveEnabled = prefs.getBool('move_reminder_enabled') ?? false;
+      _missedLogEnabled =
+          prefs.getBool('missed_log_reminder_enabled') ?? false;
+      _missedLogTime = TimeOfDay(
+        hour: prefs.getInt('missed_log_reminder_hour') ?? 21,
+        minute: prefs.getInt('missed_log_reminder_minute') ?? 0,
+      );
     });
   }
 
@@ -1132,6 +1312,9 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
     await prefs.setBool('evening_reminder_enabled', _eveningEnabled);
     await prefs.setInt('evening_reminder_hour', _eveningTime.hour);
     await prefs.setInt('evening_reminder_minute', _eveningTime.minute);
+    await prefs.setBool('missed_log_reminder_enabled', _missedLogEnabled);
+    await prefs.setInt('missed_log_reminder_hour', _missedLogTime.hour);
+    await prefs.setInt('missed_log_reminder_minute', _missedLogTime.minute);
   }
 
   Future<void> _toggleLunch(bool val) async {
@@ -1151,6 +1334,45 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
       await NotificationService().scheduleEveningReminder(_eveningTime);
     } else {
       await NotificationService().cancelEveningReminder();
+    }
+  }
+
+  Future<void> _toggleWater(bool val) async {
+    setState(() => _waterEnabled = val);
+    if (val) {
+      await NotificationService().scheduleWaterReminders();
+    } else {
+      await NotificationService().cancelWaterReminders();
+    }
+  }
+
+  Future<void> _toggleMove(bool val) async {
+    setState(() => _moveEnabled = val);
+    if (val) {
+      await NotificationService().scheduleMoveReminders();
+    } else {
+      await NotificationService().cancelMoveReminders();
+    }
+  }
+
+  Future<void> _toggleMissedLog(bool val) async {
+    setState(() => _missedLogEnabled = val);
+    await _savePrefs();
+    if (val) {
+      await NotificationService().scheduleMissedLogReminder(_missedLogTime);
+    } else {
+      await NotificationService().cancelMissedLogReminder();
+    }
+  }
+
+  Future<void> _pickMissedLogTime() async {
+    final picked =
+        await showTimePicker(context: context, initialTime: _missedLogTime);
+    if (picked == null) return;
+    setState(() => _missedLogTime = picked);
+    await _savePrefs();
+    if (_missedLogEnabled) {
+      await NotificationService().scheduleMissedLogReminder(picked);
     }
   }
 
@@ -1233,6 +1455,95 @@ class _RemindersCardState extends ConsumerState<_RemindersCard> {
             Switch(
               value: _eveningEnabled,
               onChanged: _toggleEvening,
+              activeThumbColor: kNeonYellow,
+            ),
+          ],
+        ),
+      ),
+      const Divider(height: 1, indent: 50, color: Color(0xFF2A3550)),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.water_drop_outlined,
+                color: Color(0xFF60A5FA), size: 20),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Hourly Water Reminders',
+                      style: TextStyle(color: kTextPrimary, fontSize: 14)),
+                  Text('Every hour, 9 AM – 5 PM',
+                      style: TextStyle(color: kTextSecondary, fontSize: 11)),
+                ],
+              ),
+            ),
+            Switch(
+              value: _waterEnabled,
+              onChanged: _toggleWater,
+              activeThumbColor: kNeonYellow,
+            ),
+          ],
+        ),
+      ),
+      const Divider(height: 1, indent: 50, color: Color(0xFF2A3550)),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.directions_walk,
+                color: Color(0xFF34D399), size: 20),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Hourly Move Reminders',
+                      style: TextStyle(color: kTextPrimary, fontSize: 14)),
+                  Text('Encouraging nudge every hour, 9:30 AM – 5:30 PM',
+                      style: TextStyle(color: kTextSecondary, fontSize: 11)),
+                ],
+              ),
+            ),
+            Switch(
+              value: _moveEnabled,
+              onChanged: _toggleMove,
+              activeThumbColor: kNeonYellow,
+            ),
+          ],
+        ),
+      ),
+      const Divider(height: 1, indent: 50, color: Color(0xFF2A3550)),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.no_meals_outlined,
+                color: Color(0xFFF87171), size: 20),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Missed Log Reminder',
+                      style: TextStyle(color: kTextPrimary, fontSize: 14)),
+                  Text("Don't break your streak!",
+                      style: TextStyle(color: kTextSecondary, fontSize: 11)),
+                ],
+              ),
+            ),
+            if (_missedLogEnabled)
+              GestureDetector(
+                onTap: _pickMissedLogTime,
+                child: Text(_fmt(_missedLogTime),
+                    style:
+                        const TextStyle(color: kNeonYellow, fontSize: 13)),
+              ),
+            const SizedBox(width: 8),
+            Switch(
+              value: _missedLogEnabled,
+              onChanged: _toggleMissedLog,
               activeThumbColor: kNeonYellow,
             ),
           ],

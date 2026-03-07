@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -16,9 +17,29 @@ class NotificationService {
   static const String _channelName = 'SlayFit Reminders';
   static const int _lunchId = 1;
   static const int _eveningId = 2;
+  // Water reminders: IDs 100–108 for hours 9–17
+  // Move reminders:  IDs 200–208 for hours 9–17
+  static const int _waterBaseId = 100;
+  static const int _moveBaseId = 200;
+  static const int _missedLogId = 300;
+  static const List<int> _reminderHours = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+
+  static const List<String> _moveMessages = [
+    'You haven\'t moved in a while — maybe stretch your legs! 🚶',
+    'Time for a quick walk! Even 5 minutes makes a difference. 💪',
+    'Get up and move! Your body\'ll thank you later. 🏃',
+    'Step break! Stand up, stretch, take a lap around the room. 🌟',
+    'Move it! A short stroll helps hit that step goal. 👟',
+    'Body check — haven\'t moved in a bit. Time to stretch! 💫',
+    'Quick move break! A few minutes of walking counts. 🔥',
+    'Stand up and get those legs moving! You\'ve got this. ⚡',
+    'Let\'s go! A brisk walk now keeps you on track. 🏋️',
+  ];
 
   Future<void> init() async {
     tz.initializeTimeZones();
+    final localTz = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(localTz));
 
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -42,6 +63,12 @@ class NotificationService {
       final hour = prefs.getInt('evening_reminder_hour') ?? 20;
       final minute = prefs.getInt('evening_reminder_minute') ?? 0;
       await scheduleEveningReminder(TimeOfDay(hour: hour, minute: minute));
+    }
+    if (prefs.getBool('water_reminder_enabled') ?? false) {
+      await scheduleWaterReminders();
+    }
+    if (prefs.getBool('move_reminder_enabled') ?? false) {
+      await scheduleMoveReminders();
     }
   }
 
@@ -79,6 +106,79 @@ class NotificationService {
 
   Future<void> cancelEveningReminder() async {
     await _plugin.cancel(_eveningId);
+  }
+
+  Future<void> scheduleWaterReminders() async {
+    await cancelWaterReminders();
+    for (int i = 0; i < _reminderHours.length; i++) {
+      await _plugin.zonedSchedule(
+        _waterBaseId + i,
+        'Time to hydrate! 💧',
+        'Drink a glass of water and stay on top of your daily goal.',
+        _nextInstanceOf(_reminderHours[i], 0),
+        _notificationDetails(),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('water_reminder_enabled', true);
+  }
+
+  Future<void> cancelWaterReminders() async {
+    for (int i = 0; i < _reminderHours.length; i++) {
+      await _plugin.cancel(_waterBaseId + i);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('water_reminder_enabled', false);
+  }
+
+  Future<void> scheduleMoveReminders() async {
+    await cancelMoveReminders();
+    for (int i = 0; i < _reminderHours.length; i++) {
+      await _plugin.zonedSchedule(
+        _moveBaseId + i,
+        'Time to move! 🏃',
+        _moveMessages[i],
+        _nextInstanceOf(_reminderHours[i], 30),
+        _notificationDetails(),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('move_reminder_enabled', true);
+  }
+
+  Future<void> cancelMoveReminders() async {
+    for (int i = 0; i < _reminderHours.length; i++) {
+      await _plugin.cancel(_moveBaseId + i);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('move_reminder_enabled', false);
+  }
+
+  Future<void> scheduleMissedLogReminder(TimeOfDay time) async {
+    await cancelMissedLogReminder();
+    await _plugin.zonedSchedule(
+      _missedLogId,
+      "Don't break your streak! 🔥",
+      'Log your meals to keep your streak alive.',
+      _nextInstanceOf(time.hour, time.minute),
+      _notificationDetails(),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+  }
+
+  Future<void> cancelMissedLogReminder() async {
+    await _plugin.cancel(_missedLogId);
   }
 
   Future<void> cancelAll() async {

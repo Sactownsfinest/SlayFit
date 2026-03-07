@@ -1,12 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Camera for barcode scanner -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Camera for barcode scanner + progress photos -->
     <uses-permission android:name="android.permission.CAMERA"/>
+
+    <!-- Progress photos — gallery access -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
-    <!-- Health Connect (steps + smart scale weight) -->
-    <uses-permission android:name="android.permission.health.READ_STEPS"/>
-    <uses-permission android:name="android.permission.health.READ_WEIGHT"/>
-    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    <!-- Microphone for voice input (AI Coach) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
     <!-- Push notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -47,17 +51,17 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Health Connect permission rationale (required by health package v11+) -->
-        <activity-alias
-            android:name="ViewPermissionUsageActivity"
-            android:exported="true"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE"/>
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+        <!-- flutter_web_auth_2 OAuth callback handler -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true">
+            <intent-filter android:label="flutter_web_auth_2">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="com.slayfit.slayfit"/>
             </intent-filter>
-        </activity-alias>
+        </activity>
 
         <!-- flutter_local_notifications receivers -->
         <receiver android:exported="false"
@@ -82,7 +86,5 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Health Connect app -->
-        <package android:name="com.google.android.apps.healthdata"/>
     </queries>
 </manifest>
