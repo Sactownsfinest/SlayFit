@@ -56,6 +56,7 @@ class FitbitService {
     final result = await FlutterWebAuth2.authenticate(
       url: authUrl.toString(),
       callbackUrlScheme: 'com.slayfit.slayfit',
+      options: const FlutterWebAuth2Options(preferEphemeral: true),
     );
 
     final code = Uri.parse(result).queryParameters['code'];
