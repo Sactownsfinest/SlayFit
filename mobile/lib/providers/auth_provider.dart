@@ -50,8 +50,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
-    state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+    // Any user with a saved login goes straight to the dashboard.
+    // Onboarding is only shown during the initial signUpWithEmail flow.
+    await prefs.setBool('onboarding_completed', true);
+    state = AuthState.authenticated();
   }
 
   /// Attempts a silent Google sign-in (no UI shown). Restores Firestore data.
@@ -78,13 +80,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final prefs = await SharedPreferences.getInstance();
       final existingName = prefs.getString('user_name') ?? '';
       if (existingName.isEmpty) {
-        await prefs.setString(
-            'user_name', user?.displayName ?? googleUser.displayName ?? '');
+        final googleName = user?.displayName ?? googleUser.displayName ?? '';
+        final fallbackName = googleName.isNotEmpty ? googleName : email.split('@').first;
+        await prefs.setString('user_name', fallbackName);
       }
       await prefs.setString('user_email', email);
       await prefs.setBool('is_logged_in', true);
       await prefs.setBool('onboarding_completed', true);
       await CloudSyncService.initUser(email);
+      await CloudSyncService.uploadAll();
       state = AuthState.authenticated();
       return true;
     } catch (_) {
@@ -179,15 +183,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
         if (emailUid != uid) await CloudSyncService.restore(emailUid);
       }
       final prefs = await SharedPreferences.getInstance();
-      // Preserve existing name if already set from a previous login/onboarding
+      // Always fill in name from Google if missing — covers hard-reset + re-login
       final existingName = prefs.getString('user_name') ?? '';
       if (existingName.isEmpty) {
-        await prefs.setString('user_name', user?.displayName ?? googleUser.displayName ?? '');
+        final googleName = user?.displayName ?? googleUser.displayName ?? '';
+        // Fallback: use the part of the email before the @ as display name
+        final fallbackName = googleName.isNotEmpty
+            ? googleName
+            : email.split('@').first;
+        await prefs.setString('user_name', fallbackName);
       }
       await prefs.setString('user_email', email);
       await prefs.setBool('is_logged_in', true);
       await prefs.setBool('onboarding_completed', true);
       await CloudSyncService.initUser(email);
+      // Back up all local data to Firestore so future restores work
+      await CloudSyncService.uploadAll();
       state = AuthState.authenticated();
     } catch (e) {
       state = AuthState.unauthenticated(error: 'Google sign-in failed: $e');
