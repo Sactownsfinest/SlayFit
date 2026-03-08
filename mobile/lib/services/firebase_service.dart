@@ -137,6 +137,46 @@ class SlayChallenge {
   }
 }
 
+// ── App Notification ──────────────────────────────────────────────────────────
+
+class AppNotification {
+  final String id;
+  final String type; // 'challenge_invite' | 'invite_accepted'
+  final String fromUid;
+  final String fromName;
+  final String? challengeName;
+  final String? joinCode;
+  final bool read;
+  final DateTime createdAt;
+
+  const AppNotification({
+    required this.id,
+    required this.type,
+    required this.fromUid,
+    required this.fromName,
+    this.challengeName,
+    this.joinCode,
+    required this.read,
+    required this.createdAt,
+  });
+
+  factory AppNotification.fromFirestore(String id, Map<String, dynamic> d) =>
+      AppNotification(
+        id: id,
+        type: d['type'] as String? ?? '',
+        fromUid: d['fromUid'] as String? ?? '',
+        fromName: d['fromName'] as String? ?? 'Someone',
+        challengeName: d['challengeName'] as String?,
+        joinCode: d['joinCode'] as String?,
+        read: d['read'] as bool? ?? false,
+        createdAt: d['createdAt'] is Timestamp
+            ? (d['createdAt'] as Timestamp).toDate()
+            : DateTime.now(),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 class ChatMsg {
   final String id;
   final String userId;
@@ -327,6 +367,114 @@ class FirebaseService {
       'name': name,
       'text': text,
       'ts': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  // ── User Registry (for in-app search & invites) ────────────────────────────
+
+  /// Register/update this user in the global users collection so others can
+  /// search for them by display name.
+  static Future<void> registerUser(String displayName) async {
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).set({
+      'displayName': displayName,
+      'uid': uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Search registered users by display name (prefix match, excludes self).
+  static Future<List<Map<String, String>>> searchUsers(String query) async {
+    if (query.trim().isEmpty) return [];
+    final snap = await _db
+        .collection('users')
+        .where('displayName', isGreaterThanOrEqualTo: query)
+        .where('displayName', isLessThanOrEqualTo: '$query\uf8ff')
+        .limit(10)
+        .get();
+    return snap.docs
+        .where((d) => d.id != uid)
+        .map((d) => {
+              'uid': d.data()['uid'] as String? ?? d.id,
+              'displayName': d.data()['displayName'] as String? ?? 'Unknown',
+            })
+        .toList();
+  }
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+
+  static DocumentReference _myNotifRef(String notifId) =>
+      _db.collection('users').doc(uid).collection('notifications').doc(notifId);
+
+  static Stream<List<AppNotification>> myNotificationsStream() {
+    if (uid == null) return Stream.value([]);
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('notifications')
+        .orderBy('createdAt', descending: true)
+        .limit(30)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => AppNotification.fromFirestore(d.id, d.data()))
+            .toList());
+  }
+
+  static Future<void> markNotificationRead(String notifId) async {
+    if (uid == null) return;
+    await _myNotifRef(notifId).update({'read': true});
+  }
+
+  static Future<void> deleteNotification(String notifId) async {
+    if (uid == null) return;
+    await _myNotifRef(notifId).delete();
+  }
+
+  /// Send a challenge invite to a specific user.
+  static Future<void> sendChallengeInviteToUser({
+    required String toUid,
+    required String challengeName,
+    required String joinCode,
+  }) async {
+    if (uid == null) return;
+    final name = await getDisplayName();
+    await _db
+        .collection('users')
+        .doc(toUid)
+        .collection('notifications')
+        .add({
+      'type': 'challenge_invite',
+      'fromUid': uid,
+      'fromName': name,
+      'challengeName': challengeName,
+      'joinCode': joinCode,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Accept a challenge invite — joins the challenge and notifies the sender.
+  static Future<void> acceptChallengeInvite(AppNotification notif) async {
+    if (uid == null) return;
+    // Join the challenge by code
+    if (notif.joinCode != null) {
+      await joinChallenge(notif.joinCode!);
+    }
+    // Mark as read
+    await markNotificationRead(notif.id);
+    // Notify the sender
+    final myName = await getDisplayName();
+    await _db
+        .collection('users')
+        .doc(notif.fromUid)
+        .collection('notifications')
+        .add({
+      'type': 'invite_accepted',
+      'fromUid': uid,
+      'fromName': myName,
+      'challengeName': notif.challengeName,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
     });
   }
 }

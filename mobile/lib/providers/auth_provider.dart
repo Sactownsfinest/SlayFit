@@ -1,8 +1,16 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/cloud_sync_service.dart';
+
+/// One-way hash for local password storage. Never stored in plaintext.
+String _hashPassword(String email, String password) {
+  final input = '${email.toLowerCase().trim()}:$password:slayfit_v1';
+  return sha256.convert(utf8.encode(input)).toString();
+}
 
 enum AuthStatus { loading, authenticated, onboarding, unauthenticated }
 
@@ -42,14 +50,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState.loading();
     final prefs = await SharedPreferences.getInstance();
     final storedEmail = prefs.getString('user_email');
-    final storedPassword = prefs.getString('user_password');
-    if (storedEmail == email && storedPassword == password) {
-      // Restore cloud data before navigating to home
+    final storedHash = prefs.getString('user_password_hash');
+    // Also accept old plaintext entries so existing users aren't locked out,
+    // then migrate them to the hashed format on successful login.
+    final oldPlaintext = prefs.getString('user_password');
+    final hashMatches = storedHash == _hashPassword(email, password);
+    final plaintextMatches = oldPlaintext != null && oldPlaintext == password;
+    if (storedEmail == email && (hashMatches || plaintextMatches)) {
+      // Migrate plaintext to hash if needed
+      if (plaintextMatches && !hashMatches) {
+        await prefs.setString('user_password_hash', _hashPassword(email, password));
+        await prefs.remove('user_password');
+      }
       await CloudSyncService.restore(CloudSyncService.emailToUid(email));
       await prefs.setBool('is_logged_in', true);
       final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
-      state =
-          onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+      state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
     } else {
       state = AuthState.unauthenticated(error: 'Invalid email or password');
     }
@@ -61,7 +77,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_name', name);
     await prefs.setString('user_email', email);
-    await prefs.setString('user_password', password);
+    await prefs.setString('user_password_hash', _hashPassword(email, password));
+    await prefs.remove('user_password'); // clear any old plaintext
     await prefs.setBool('is_logged_in', true);
     await prefs.setBool('onboarding_completed', false);
     await CloudSyncService.initUser(email);

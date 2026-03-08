@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
@@ -11,6 +12,7 @@ import '../providers/water_provider.dart';
 import '../services/notification_service.dart';
 import '../providers/health_provider.dart';
 import '../providers/measurements_provider.dart';
+import '../providers/challenges_provider.dart';
 
 String _fmtWeight(double kg, bool metric) =>
     metric ? '${kg.toStringAsFixed(1)} kg' : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
@@ -275,7 +277,45 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 20),
 
               // Achievements
-              _SectionHeader('ACHIEVEMENTS'),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const _SectionHeader('ACHIEVEMENTS'),
+                  TextButton(
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          backgroundColor: kCardDark,
+                          title: const Text('Reset Challenges & Badges',
+                              style: TextStyle(color: kTextPrimary, fontSize: 16)),
+                          content: const Text(
+                              'This will clear all completed challenges and earned badges. Continue?',
+                              style: TextStyle(color: kTextSecondary, fontSize: 14)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel',
+                                  style: TextStyle(color: kTextSecondary)),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Reset',
+                                  style: TextStyle(color: Colors.redAccent)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await ref.read(challengesProvider.notifier).resetAll();
+                        await ref.read(streakProvider.notifier).resetAchievements();
+                      }
+                    },
+                    child: const Text('Reset',
+                        style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
               GridView.count(
                 crossAxisCount: 3,
@@ -319,6 +359,27 @@ class ProfileScreen extends ConsumerWidget {
                   onTap: () => _editWaterGoal(context, ref, water.dailyGoalMl),
                 ),
               ]),
+              const SizedBox(height: 20),
+
+              // Invite Friends
+              const _SectionHeader('INVITE'),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Share.share(
+                    'Hey! Join me on SlayFit — the fitness app I\'ve been using to crush my goals! 💪⚡\n\n'
+                    'Download it here: https://appdistribution.firebase.dev/i/b170cd7640debdb1',
+                  ),
+                  icon: const Icon(Icons.person_add_outlined, color: Colors.black),
+                  label: const Text('Invite Friends', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kNeonYellow,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
               const SizedBox(height: 20),
 
               // Sign out

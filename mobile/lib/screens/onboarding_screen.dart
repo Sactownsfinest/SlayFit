@@ -18,6 +18,7 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   late PageController _pageController;
   int _currentPage = 0;
+  bool _loading = false;
 
   String _name = '';
   String _sex = 'M';
@@ -62,26 +63,40 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _completeOnboarding() async {
-    final calories = _calculateCalorieGoal();
-    final trimmedName = _name.trim().isEmpty ? 'User' : _name.trim();
-    // Save name to shared prefs so other providers pick it up
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_name', trimmedName);
-    final profile = ref.read(userProfileProvider).copyWith(
-          name: trimmedName,
-          sex: _sex,
-          heightCm: _height,
-          goalWeightKg: _goalWeight,
-          activityLevel: _activityLevel,
-          dailyCalorieGoal: calories,
-          useMetric: _useMetric,
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final calories = _calculateCalorieGoal();
+      final trimmedName = _name.trim().isEmpty ? 'User' : _name.trim();
+      // Save name to shared prefs so other providers pick it up
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', trimmedName);
+      final profile = ref.read(userProfileProvider).copyWith(
+            name: trimmedName,
+            sex: _sex,
+            heightCm: _height,
+            goalWeightKg: _goalWeight,
+            activityLevel: _activityLevel,
+            dailyCalorieGoal: calories,
+            useMetric: _useMetric,
+          );
+      await ref.read(userProfileProvider.notifier).update(profile);
+      ref.read(weightProvider.notifier).logWeight(_weight);
+      ref.read(foodLogProvider.notifier).setCalorieGoal(calories.toDouble());
+      // Back up everything to cloud before navigating
+      await CloudSyncService.uploadAll();
+      ref.read(authProvider.notifier).completeOnboarding();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Setup failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
-    await ref.read(userProfileProvider.notifier).update(profile);
-    ref.read(weightProvider.notifier).logWeight(_weight);
-    ref.read(foodLogProvider.notifier).setCalorieGoal(calories.toDouble());
-    // Back up everything to cloud before navigating
-    await CloudSyncService.uploadAll();
-    ref.read(authProvider.notifier).completeOnboarding();
+      }
+    }
   }
 
   @override
@@ -176,17 +191,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               )
             else
               ElevatedButton(
-                onPressed: _completeOnboarding,
+                onPressed: _loading ? null : _completeOnboarding,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kNeonYellow,
                   foregroundColor: Colors.black,
+                  disabledBackgroundColor: kNeonYellow.withValues(alpha: 0.5),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 ),
-                child: const Text("Let's Go!",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                child: _loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.black,
+                        ),
+                      )
+                    : const Text("Let's Go!",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
               ),
           ],
         ),
@@ -228,6 +253,18 @@ class _Page1State extends State<_Page1> {
               decoration: BoxDecoration(
                 color: kNeonYellow,
                 borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: kNeonYellow.withValues(alpha: 0.75),
+                    blurRadius: 22,
+                    spreadRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: kNeonYellow.withValues(alpha: 0.30),
+                    blurRadius: 48,
+                    spreadRadius: 4,
+                  ),
+                ],
               ),
               child: const Icon(Icons.bolt, size: 52, color: Colors.black),
             ),
@@ -365,20 +402,20 @@ class _Page2 extends StatelessWidget {
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             const Text('About You',
                 style: TextStyle(
                     color: kTextPrimary,
-                    fontSize: 26,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             const Text('We use this to calculate your calorie needs',
-                style: TextStyle(color: kTextSecondary, fontSize: 14)),
-            const SizedBox(height: 20),
+                style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            const SizedBox(height: 12),
             // Unit toggle
             Row(
               children: [
@@ -393,10 +430,10 @@ class _Page2 extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 14),
             const Text('Sex',
                 style: TextStyle(color: kTextSecondary, fontSize: 13)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Row(
               children: [
                 _SexChip(
@@ -404,13 +441,13 @@ class _Page2 extends StatelessWidget {
                     value: 'M',
                     selected: sex,
                     onTap: onSexChanged),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _SexChip(
                     label: 'Female',
                     value: 'F',
                     selected: sex,
                     onTap: onSexChanged),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _SexChip(
                     label: 'Other',
                     value: 'O',
@@ -418,7 +455,7 @@ class _Page2 extends StatelessWidget {
                     onTap: onSexChanged),
               ],
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 14),
             _SliderSection(
               label: 'Current Weight',
               value: wVal,
@@ -429,7 +466,7 @@ class _Page2 extends StatelessWidget {
               onChanged: (v) =>
                   onWeightChanged(useMetric ? v : v / 2.20462),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             _SliderSection(
               label: 'Height',
               value: hVal,
@@ -555,7 +592,7 @@ class _SexChip extends StatelessWidget {
   }
 }
 
-class _SliderSection extends StatelessWidget {
+class _SliderSection extends StatefulWidget {
   final String label;
   final double value;
   final String unit;
@@ -575,7 +612,54 @@ class _SliderSection extends StatelessWidget {
   });
 
   @override
+  State<_SliderSection> createState() => _SliderSectionState();
+}
+
+class _SliderSectionState extends State<_SliderSection> {
+  late TextEditingController _ctrl;
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: _displayValue(widget.value));
+  }
+
+  @override
+  void didUpdateWidget(_SliderSection old) {
+    super.didUpdateWidget(old);
+    // Only sync text when not actively typing
+    if (!_editing && old.value != widget.value) {
+      _ctrl.text = _displayValue(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  String _displayValue(double v) {
+    // Show whole numbers when the range uses whole numbers, else 1 decimal
+    return (v == v.roundToDouble()) ? v.round().toString() : v.toStringAsFixed(1);
+  }
+
+  void _submitText() {
+    final val = double.tryParse(_ctrl.text.trim());
+    setState(() => _editing = false);
+    if (val != null) {
+      final clamped = val.clamp(widget.min, widget.max);
+      widget.onChanged(clamped.toDouble());
+    } else {
+      // Restore current value if invalid input
+      _ctrl.text = _displayValue(widget.value);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final divisions = (widget.max - widget.min).round();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -588,39 +672,55 @@ class _SliderSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      color: kTextSecondary, fontSize: 13)),
-              displayOverride != null
-                  ? Text(
-                      displayOverride!,
+              Text(widget.label,
+                  style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // If there's a display override (e.g. ft/in for height), show it
+                  if (widget.displayOverride != null) ...[
+                    Text(
+                      widget.displayOverride!,
                       style: const TextStyle(
                         color: kNeonYellow,
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                         fontFamily: 'Poppins',
                       ),
-                    )
-                  : RichText(
-                      text: TextSpan(children: [
-                        TextSpan(
-                          text: value.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: kNeonYellow,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                        TextSpan(
-                          text: ' $unit',
-                          style: const TextStyle(
-                              color: kTextSecondary,
-                              fontSize: 13,
-                              fontFamily: 'Poppins'),
-                        ),
-                      ]),
                     ),
+                    const SizedBox(width: 8),
+                    const Text('(', style: TextStyle(color: kTextSecondary, fontSize: 13)),
+                  ],
+                  // Editable number field
+                  IntrinsicWidth(
+                    child: TextField(
+                      controller: _ctrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: widget.displayOverride != null ? kTextSecondary : kNeonYellow,
+                        fontWeight: widget.displayOverride != null ? FontWeight.normal : FontWeight.bold,
+                        fontSize: widget.displayOverride != null ? 13 : 18,
+                        fontFamily: 'Poppins',
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                      ),
+                      onTap: () => setState(() => _editing = true),
+                      onChanged: (_) => setState(() => _editing = true),
+                      onSubmitted: (_) => _submitText(),
+                      onEditingComplete: _submitText,
+                    ),
+                  ),
+                  if (widget.displayOverride != null)
+                    const Text(' in)', style: TextStyle(color: kTextSecondary, fontSize: 13))
+                  else if (widget.unit.isNotEmpty)
+                    Text(' ${widget.unit}',
+                        style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+                ],
+              ),
             ],
           ),
           SliderTheme(
@@ -631,10 +731,14 @@ class _SliderSection extends StatelessWidget {
               overlayColor: kNeonYellow.withValues(alpha: 0.15),
             ),
             child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              onChanged: onChanged,
+              value: widget.value,
+              min: widget.min,
+              max: widget.max,
+              divisions: divisions > 0 ? divisions : null,
+              onChanged: (v) {
+                setState(() => _editing = false);
+                widget.onChanged(v);
+              },
             ),
           ),
         ],
@@ -668,20 +772,20 @@ class _Page3 extends StatelessWidget {
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             const Text('Your Goal',
                 style: TextStyle(
                     color: kTextPrimary,
-                    fontSize: 26,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             const Text('How much do you want to weigh?',
-                style: TextStyle(color: kTextSecondary, fontSize: 14)),
-            const SizedBox(height: 32),
+                style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            const SizedBox(height: 14),
             _SliderSection(
               label: 'Goal Weight',
               value: gVal,
@@ -691,10 +795,10 @@ class _Page3 extends StatelessWidget {
               onChanged: (v) =>
                   onGoalWeightChanged(useMetric ? v : v / 2.20462),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 14),
             const Text('Loss Pace',
                 style: TextStyle(color: kTextSecondary, fontSize: 13)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             _PaceOption(
               value: 'slow',
               title: 'Slow',
@@ -751,9 +855,9 @@ class _PaceOption extends StatelessWidget {
       onTap: () => onTap(value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 10),
+        margin: const EdgeInsets.only(bottom: 8),
         padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color:
               isSelected ? kNeonYellow.withValues(alpha: 0.1) : kCardDark,
@@ -820,22 +924,22 @@ class _Page4 extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             const Text('Activity Level',
                 style: TextStyle(
                     color: kTextPrimary,
-                    fontSize: 26,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             const Text(
                 'How active are you outside of dedicated workouts?',
                 style:
-                    TextStyle(color: kTextSecondary, fontSize: 14)),
-            const SizedBox(height: 32),
+                    TextStyle(color: kTextSecondary, fontSize: 13)),
+            const SizedBox(height: 14),
             _ActivityOption(
               value: 'sedentary',
               title: 'Sedentary',
@@ -899,8 +1003,8 @@ class _ActivityOption extends StatelessWidget {
       onTap: () => onTap(value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color:
               isSelected ? kNeonYellow.withValues(alpha: 0.1) : kCardDark,
@@ -914,19 +1018,19 @@ class _ActivityOption extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: isSelected
                     ? kNeonYellow.withValues(alpha: 0.2)
                     : const Color(0xFF2A3550),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon,
                   color: isSelected ? kNeonYellow : kTextSecondary,
-                  size: 22),
+                  size: 20),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -8,6 +8,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../providers/food_provider.dart';
 import '../providers/recipe_provider.dart';
 import '../main.dart';
+import 'grocery_list_screen.dart';
 
 class FoodLogScreen extends ConsumerStatefulWidget {
   const FoodLogScreen({Key? key}) : super(key: key);
@@ -43,6 +44,11 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
           snap: true,
           title: const Text('Food'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.shopping_cart_outlined, color: kNeonYellow),
+              tooltip: 'Meal Plan & Grocery List',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroceryListScreen())),
+            ),
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined, color: kNeonYellow),
               tooltip: 'Scan your plate',

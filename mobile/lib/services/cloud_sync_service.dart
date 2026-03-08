@@ -83,6 +83,16 @@ class CloudSyncService {
     }
   }
 
+  /// Keys that must never leave the device — excluded from Firestore sync.
+  static const _sensitiveKeys = {
+    'user_password',
+    'user_password_hash',
+    'auth_token',
+    'fitbit_access_token',
+    'fitbit_refresh_token',
+    'fitbit_token_expiry',
+  };
+
   /// Upload ALL current SharedPreferences keys to Firestore (full backup).
   /// Serializes bool/int/double with type tags so they restore correctly.
   static Future<void> uploadAll() async {
@@ -95,17 +105,22 @@ class CloudSyncService {
         .doc(_userId)
         .collection('prefs');
     for (final key in all) {
-      String? value = prefs.getString(key);
+      if (_sensitiveKeys.contains(key)) continue; // never sync sensitive data
+      String? value;
+      try { value = prefs.getString(key); } catch (_) {}
       if (value == null) {
-        final b = prefs.getBool(key);
+        bool? b;
+        try { b = prefs.getBool(key); } catch (_) {}
         if (b != null) {
           value = 'bool:$b';
         } else {
-          final i = prefs.getInt(key);
+          int? i;
+          try { i = prefs.getInt(key); } catch (_) {}
           if (i != null) {
             value = 'int:$i';
           } else {
-            final d = prefs.getDouble(key);
+            double? d;
+            try { d = prefs.getDouble(key); } catch (_) {}
             if (d != null) value = 'double:$d';
           }
         }

@@ -20,12 +20,14 @@ app = FastAPI(
 
 # Middleware
 app.add_middleware(GZIPMiddleware, minimum_size=1000)
+import os
+_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Health check

@@ -3,12 +3,14 @@ from typing import Optional
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/slayfit"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    # IMPORTANT: Set SECRET_KEY in your .env file before deploying.
+    # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+    SECRET_KEY: str = "CHANGE_ME_generate_with_secrets_token_hex_32"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False  # Never expose debug info in production
     
     # Anthropic AI Coach
     ANTHROPIC_API_KEY: Optional[str] = None

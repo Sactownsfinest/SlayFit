@@ -440,7 +440,7 @@ class _AiGuidedWorkoutCardState extends ConsumerState<_AiGuidedWorkoutCard> {
         flags: const YoutubePlayerFlags(
           autoPlay: true,
           mute: false,
-          enableCaption: false,
+          enableCaption: true,
         ),
       );
     });
@@ -620,12 +620,15 @@ class _AiGuidedWorkoutCardState extends ConsumerState<_AiGuidedWorkoutCard> {
               ],
             ),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: YoutubePlayer(
+            YoutubePlayerBuilder(
+              player: YoutubePlayer(
                 controller: _playerController!,
                 showVideoProgressIndicator: true,
                 progressIndicatorColor: kNeonYellow,
+              ),
+              builder: (context, player) => ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: player,
               ),
             ),
             const SizedBox(height: 12),
@@ -1049,7 +1052,7 @@ class _CategoryVideosSheetState
         flags: const YoutubePlayerFlags(
           autoPlay: true,
           mute: false,
-          enableCaption: false,
+          enableCaption: true,
         ),
       );
     });
@@ -1123,12 +1126,15 @@ class _CategoryVideosSheetState
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
                   if (_playing != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: YoutubePlayer(
+                    YoutubePlayerBuilder(
+                      player: YoutubePlayer(
                         controller: _playerController!,
                         showVideoProgressIndicator: true,
                         progressIndicatorColor: kNeonYellow,
+                      ),
+                      builder: (context, player) => ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: player,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1396,7 +1402,7 @@ class _LibraryPlanPreviewSheetState
           flags: const YoutubePlayerFlags(
             autoPlay: false,
             mute: false,
-            enableCaption: false,
+            enableCaption: true,
             disableDragSeek: false,
           ),
         );

@@ -243,6 +243,18 @@ class _SplashScreenState extends State<SplashScreen>
                   decoration: BoxDecoration(
                     color: kNeonYellow,
                     borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: kNeonYellow.withValues(alpha: 0.75),
+                        blurRadius: 22,
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: kNeonYellow.withValues(alpha: 0.30),
+                        blurRadius: 48,
+                        spreadRadius: 4,
+                      ),
+                    ],
                   ),
                   child: const Icon(Icons.bolt, size: 56, color: Colors.black),
                 ),

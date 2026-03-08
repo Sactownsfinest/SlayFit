@@ -175,6 +175,13 @@ class StreakNotifier extends StateNotifier<StreakState> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  Future<void> resetAchievements() async {
+    state = state.copyWith(
+      achievements: kAllAchievements.map((a) => a.copyWith(unlockedAt: null)).toList(),
+    );
+    await _save();
+  }
+
   Future<void> onFoodLogged() async {
     final newTotal = state.totalFoodLogs + 1;
     state = state.copyWith(totalFoodLogs: newTotal);

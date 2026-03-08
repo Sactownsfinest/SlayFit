@@ -11,6 +11,7 @@ class BodyMeasurement {
   final double? hipsCm;
   final double? chestCm;
   final double? armsCm;
+  final double? thighsCm;
   final double? bodyFatPercent;
   final String? notes;
 
@@ -21,6 +22,7 @@ class BodyMeasurement {
     this.hipsCm,
     this.chestCm,
     this.armsCm,
+    this.thighsCm,
     this.bodyFatPercent,
     this.notes,
   });
@@ -32,6 +34,7 @@ class BodyMeasurement {
         'hipsCm': hipsCm,
         'chestCm': chestCm,
         'armsCm': armsCm,
+        'thighsCm': thighsCm,
         'bodyFatPercent': bodyFatPercent,
         'notes': notes,
       };
@@ -43,6 +46,7 @@ class BodyMeasurement {
         hipsCm: (j['hipsCm'] as num?)?.toDouble(),
         chestCm: (j['chestCm'] as num?)?.toDouble(),
         armsCm: (j['armsCm'] as num?)?.toDouble(),
+        thighsCm: (j['thighsCm'] as num?)?.toDouble(),
         bodyFatPercent: (j['bodyFatPercent'] as num?)?.toDouble(),
         notes: j['notes'] as String?,
       );

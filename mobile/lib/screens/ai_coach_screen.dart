@@ -343,18 +343,10 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
     await _sendToApi(text);
   }
 
-  Future<void> _sendMealPlan() async {
-    if (_voiceState == _VoiceState.thinking) return;
-    final ctx = _buildContext();
-    final cal = ctx['calorieGoal'] ?? 2000;
-    final p = ctx['proteinG'] ?? 150;
-    final c = ctx['carbsG'] ?? 200;
-    final f = ctx['fatG'] ?? 65;
-    await _sendToApi(
-      'Generate a 7-day meal plan for me. My daily calorie goal is ${cal}kcal, '
-      'macros: ${p}g protein, ${c}g carbs, ${f}g fat. '
-      'Format as Day 1: Breakfast ..., Lunch ..., Dinner ..., Snack ...',
-    );
+  static bool _isMealPlan(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('day 1') &&
+        (lower.contains('breakfast') || lower.contains('lunch') || lower.contains('dinner'));
   }
 
   Future<void> _sendToApi(String userText, {bool isAutoTip = false}) async {
@@ -381,9 +373,13 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
       final reply = _processReply(raw);
 
       if (mounted) {
+        final mealPlan = _isMealPlan(reply);
         setState(() {
           _messages.add(_ChatMessage(
-              role: 'assistant', text: reply, isAutoTip: isAutoTip));
+              role: 'assistant',
+              text: reply,
+              isAutoTip: isAutoTip,
+              hasMealPlan: mealPlan));
         });
         _saveHistory();
         _scrollToBottom();
@@ -600,33 +596,77 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-              decoration: BoxDecoration(
-                color: isUser
-                    ? kNeonYellow.withValues(alpha: 0.15)
-                    : kCardDark,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(14),
-                  topRight: const Radius.circular(14),
-                  bottomLeft: Radius.circular(isUser ? 14 : 3),
-                  bottomRight: Radius.circular(isUser ? 3 : 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: isUser
+                        ? kNeonYellow.withValues(alpha: 0.15)
+                        : kCardDark,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(14),
+                      topRight: const Radius.circular(14),
+                      bottomLeft: Radius.circular(isUser ? 14 : 3),
+                      bottomRight: Radius.circular(isUser ? 3 : 14),
+                    ),
+                    border: isUser
+                        ? Border.all(
+                            color: kNeonYellow.withValues(alpha: 0.3),
+                            width: 1)
+                        : null,
+                  ),
+                  child: Text(
+                    msg.text,
+                    style: TextStyle(
+                      color: isUser ? kNeonYellow : kTextPrimary,
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
                 ),
-                border: isUser
-                    ? Border.all(
-                        color: kNeonYellow.withValues(alpha: 0.3),
-                        width: 1)
-                    : null,
-              ),
-              child: Text(
-                msg.text,
-                style: TextStyle(
-                  color: isUser ? kNeonYellow : kTextPrimary,
-                  fontSize: 13,
-                  height: 1.45,
-                ),
-              ),
+                if (msg.hasMealPlan) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const GroceryListScreen()),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1A2E3A), Color(0xFF0F1826)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: kNeonYellow.withValues(alpha: 0.4),
+                            width: 1),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.shopping_cart_outlined,
+                              color: kNeonYellow, size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'Create Grocery List →',
+                            style: TextStyle(
+                              color: kNeonYellow,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -680,27 +720,6 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                ActionChip(
-                  label: const Text('7-Day Meal Plan'),
-                  avatar: const Icon(Icons.restaurant_menu,
-                      size: 16, color: Colors.black),
-                  backgroundColor: kNeonYellow,
-                  labelStyle: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12),
-                  onPressed: isBusy ? null : _sendMealPlan,
-                ),
-                const SizedBox(width: 8),
-                ActionChip(
-                  label: const Text("Today's Summary"),
-                  avatar: const Icon(Icons.bar_chart, size: 16),
-                  onPressed: isBusy
-                      ? null
-                      : () => _sendToApi(
-                          "Give me a quick summary of how I'm doing today."),
-                ),
-                const SizedBox(width: 8),
                 ActionChip(
                   label: const Text('Motivate Me'),
                   avatar: const Icon(Icons.bolt, size: 16),
@@ -839,8 +858,12 @@ class _ChatMessage {
   final String role;
   final String text;
   final bool isAutoTip;
+  final bool hasMealPlan;
   const _ChatMessage(
-      {required this.role, required this.text, this.isAutoTip = false});
+      {required this.role,
+      required this.text,
+      this.isAutoTip = false,
+      this.hasMealPlan = false});
 }
 
 class _TypingDots extends StatefulWidget {

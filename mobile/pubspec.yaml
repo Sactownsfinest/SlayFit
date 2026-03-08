@@ -53,6 +53,9 @@ dependencies:
   # YouTube inline video player (guided workout videos)
   youtube_player_flutter: ^9.1.1
 
+  # Real-time phone pedometer (Android step counter hardware sensor)
+  pedometer: ^4.0.0
+
   # Progress photos (pick from gallery or camera)
   image_picker: ^1.1.2
 

@@ -7,7 +7,7 @@ import '../providers/user_provider.dart';
 import '../services/claude_service.dart';
 import '../main.dart';
 
-// ── Model ─────────────────────────────────────────────────────────────────────
+// ── Models ────────────────────────────────────────────────────────────────────
 
 class _GroceryItem {
   final String name;
@@ -15,11 +15,20 @@ class _GroceryItem {
   final String category;
   bool checked = false;
 
-  _GroceryItem({
-    required this.name,
-    required this.qty,
-    required this.category,
-  });
+  _GroceryItem({required this.name, required this.qty, required this.category});
+}
+
+class _MealEntry {
+  final String mealType;
+  final String description;
+  bool checked;
+  _MealEntry({required this.mealType, required this.description, this.checked = false});
+}
+
+class _MealDay {
+  final int day;
+  final List<_MealEntry> meals;
+  _MealDay({required this.day, required this.meals});
 }
 
 const _categoryOrder = [
@@ -52,9 +61,39 @@ class GroceryListScreen extends ConsumerStatefulWidget {
 class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
   bool _loading = false;
   String? _error;
-  String _mealPlan = '';
   List<_GroceryItem> _items = [];
-  bool _mealPlanExpanded = false;
+  List<_MealDay> _parsedDays = [];
+
+  Color _mealTypeColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'breakfast': return const Color(0xFFFF9500);
+      case 'lunch':     return const Color(0xFF34C759);
+      case 'dinner':    return const Color(0xFF007AFF);
+      default:          return const Color(0xFFBF5AF2); // snack
+    }
+  }
+
+  List<_MealDay> _parseMealPlan(String raw) {
+    final days = <_MealDay>[];
+    final lines = raw.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    _MealDay? current;
+    final dayRx = RegExp(r'^Day\s+(\d+)', caseSensitive: false);
+    final mealRx = RegExp(r'^(Breakfast|Lunch|Dinner|Snack)[:\s]+(.+)', caseSensitive: false);
+    for (final line in lines) {
+      final d = dayRx.firstMatch(line);
+      if (d != null) {
+        if (current != null) days.add(current);
+        current = _MealDay(day: int.tryParse(d.group(1) ?? '1') ?? 1, meals: []);
+        continue;
+      }
+      final m = mealRx.firstMatch(line);
+      if (m != null && current != null) {
+        current.meals.add(_MealEntry(mealType: m.group(1)!, description: m.group(2)!.trim()));
+      }
+    }
+    if (current != null) days.add(current);
+    return days;
+  }
 
   Map<String, List<_GroceryItem>> get _grouped {
     final m = <String, List<_GroceryItem>>{};
@@ -101,7 +140,7 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
       }).where((i) => i.name.isNotEmpty).toList();
 
       setState(() {
-        _mealPlan = mealPlan;
+        _parsedDays = _parseMealPlan(mealPlan);
         _items = items;
         _loading = false;
       });
@@ -291,42 +330,92 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
           ),
         ),
 
-        // Meal plan collapsible
-        if (_mealPlan.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: kCardDark,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF2A3550)),
-            ),
-            child: Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                leading: const Icon(Icons.restaurant_menu,
-                    color: kNeonYellow, size: 18),
-                title: const Text('View 7-Day Meal Plan',
-                    style: TextStyle(
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14)),
-                initiallyExpanded: _mealPlanExpanded,
-                onExpansionChanged: (v) =>
-                    setState(() => _mealPlanExpanded = v),
-                iconColor: kTextSecondary,
-                collapsedIconColor: kTextSecondary,
-                children: [
-                  Text(
-                    _mealPlan,
-                    style: const TextStyle(
-                        color: kTextSecondary, fontSize: 13, height: 1.6),
-                  ),
-                ],
-              ),
-            ),
+        // 7-Day Meal Plan — checkable day cards
+        if (_parsedDays.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Row(children: [
+              Icon(Icons.restaurant_menu, color: kNeonYellow, size: 16),
+              SizedBox(width: 6),
+              Text('7-Day Meal Plan', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+            ]),
           ),
+          ..._parsedDays.map((dayPlan) {
+            final allChecked = dayPlan.meals.every((m) => m.checked);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: kCardDark,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: allChecked ? kNeonYellow.withValues(alpha: 0.4) : const Color(0xFF2A3550),
+                ),
+              ),
+              child: Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  leading: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: allChecked ? kNeonYellow.withValues(alpha: 0.15) : const Color(0xFF1E2D45),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: allChecked
+                          ? const Icon(Icons.check, color: kNeonYellow, size: 16)
+                          : Text('${dayPlan.day}', style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ),
+                  title: Text(
+                    'Day ${dayPlan.day}',
+                    style: TextStyle(
+                      color: allChecked ? kNeonYellow : kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      decoration: allChecked ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  subtitle: Text(
+                    dayPlan.meals.map((m) => m.mealType).join(' · '),
+                    style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                  ),
+                  iconColor: kTextSecondary,
+                  collapsedIconColor: kTextSecondary,
+                  children: dayPlan.meals.map((meal) {
+                    final mealColor = _mealTypeColor(meal.mealType);
+                    return CheckboxListTile(
+                      value: meal.checked,
+                      onChanged: (v) => setState(() => meal.checked = v ?? false),
+                      activeColor: kNeonYellow,
+                      checkColor: Colors.black,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      dense: true,
+                      title: Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(color: mealColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                          child: Text(meal.mealType, style: TextStyle(color: mealColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(
+                          meal.description,
+                          style: TextStyle(
+                            color: meal.checked ? kTextSecondary : kTextPrimary,
+                            fontSize: 12,
+                            decoration: meal.checked ? TextDecoration.lineThrough : null,
+                          ),
+                        )),
+                      ]),
+                    );
+                  }).toList(),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
 
         // Grocery list by category
         for (final cat in _categoryOrder)
@@ -349,7 +438,7 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
                 onPressed: () {
                   setState(() {
                     _items = [];
-                    _mealPlan = '';
+                    _parsedDays = [];
                   });
                   _generate();
                 },

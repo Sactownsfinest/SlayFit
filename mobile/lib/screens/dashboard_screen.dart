@@ -30,7 +30,18 @@ class DashboardScreen extends ConsumerWidget {
           snap: true,
           title: Row(
             children: [
-              const Icon(Icons.bolt, color: kNeonYellow, size: 22),
+              Container(
+                decoration: const BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: kNeonYellow,
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.bolt, color: kNeonYellow, size: 24),
+              ),
               const SizedBox(width: 6),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,8 +117,19 @@ class _GreetingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1F2E48), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,8 +214,28 @@ class _CalorieRingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: kCardDark,
-        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1C2A42), Color(0xFF0F1826)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: kNeonYellow.withValues(alpha: 0.07),
+            blurRadius: 24,
+            spreadRadius: 3,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+        border: Border.all(
+          color: kNeonYellow.withValues(alpha: 0.08),
+          width: 1,
+        ),
       ),
       child: Column(
         children: [
@@ -290,47 +332,68 @@ class _DualCalorieRingPainter extends CustomPainter {
     const strokeWidth = 18.0;
     final rect = Rect.fromCircle(center: center, radius: radius);
 
-    // Track (background)
+    // Track (very faint guide ring)
     canvas.drawCircle(
       center,
       radius,
       Paint()
-        ..color = const Color(0xFF2A3550)
+        ..color = const Color(0xFF1E2D45)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
+        ..strokeWidth = strokeWidth * 0.3,
     );
 
-    // Burned arc — green, counter-clockwise from top
+    // Burned arc — green LED, counter-clockwise from top
     final burnedSweep = (burned / goal).clamp(0.0, 1.0) * 2 * math.pi;
     if (burnedSweep > 0) {
-      canvas.drawArc(
-        rect,
-        -math.pi / 2,
-        -burnedSweep,
-        false,
-        Paint()
-          ..color = const Color(0xFF4ADE80)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round,
-      );
+      _drawLedArc(canvas, rect, -math.pi / 2, -burnedSweep,
+          const Color(0xFF4ADE80), strokeWidth);
     }
 
-    // Eaten arc — red, clockwise from top (drawn on top so overlap is visible)
+    // Eaten arc — red LED, clockwise from top
     final eatenSweep = (eaten / goal).clamp(0.0, 1.0) * 2 * math.pi;
     if (eatenSweep > 0) {
-      canvas.drawArc(
-        rect,
-        -math.pi / 2,
-        eatenSweep,
-        false,
-        Paint()
-          ..color = const Color(0xFFF87171)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeCap = StrokeCap.round,
-      );
+      _drawLedArc(canvas, rect, -math.pi / 2, eatenSweep,
+          const Color(0xFFF87171), strokeWidth);
     }
+  }
+
+  static void _drawLedArc(Canvas canvas, Rect rect, double startAngle,
+      double sweepAngle, Color color, double strokeWidth) {
+    // Outer diffuse halo (widest, faintest)
+    canvas.drawArc(rect, startAngle, sweepAngle, false,
+        Paint()
+          ..color = color.withValues(alpha: 0.07)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 3.4
+          ..strokeCap = StrokeCap.round);
+    // Mid halo
+    canvas.drawArc(rect, startAngle, sweepAngle, false,
+        Paint()
+          ..color = color.withValues(alpha: 0.18)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 2.0
+          ..strokeCap = StrokeCap.round);
+    // Inner glow corona
+    canvas.drawArc(rect, startAngle, sweepAngle, false,
+        Paint()
+          ..color = color.withValues(alpha: 0.42)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 1.15
+          ..strokeCap = StrokeCap.round);
+    // Core bright tube (thin)
+    canvas.drawArc(rect, startAngle, sweepAngle, false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 0.28
+          ..strokeCap = StrokeCap.round);
+    // Specular hot-spot (white center line)
+    canvas.drawArc(rect, startAngle, sweepAngle, false,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.75)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 0.10
+          ..strokeCap = StrokeCap.round);
   }
 
   @override
@@ -391,8 +454,19 @@ class _MacrosCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1D2B40), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,12 +542,64 @@ class _MacroBar extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progress,
-            backgroundColor: const Color(0xFF2A3550),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 8,
+          borderRadius: BorderRadius.circular(7),
+          child: Stack(
+            children: [
+              // Track
+              Container(
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A2640),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              // Glow layer
+              FractionallySizedBox(
+                widthFactor: progress,
+                child: Container(
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
+              ),
+              // Core LED bar
+              FractionallySizedBox(
+                widthFactor: progress,
+                child: Container(
+                  height: 12,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [color.withValues(alpha: 0.75), color],
+                    ),
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.55),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Specular highlight strip
+              FractionallySizedBox(
+                widthFactor: progress,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    height: 3,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -500,8 +626,19 @@ class _TodayActivityCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A2E3A), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -557,8 +694,19 @@ class _MealSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E2B3E), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -661,8 +809,24 @@ class _WaterCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A2B42), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF60A5FA).withValues(alpha: 0.06),
+            blurRadius: 16,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -687,12 +851,53 @@ class _WaterCard extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: const Color(0xFF2A3550),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF60A5FA)),
-              minHeight: 8,
+            borderRadius: BorderRadius.circular(7),
+            child: Stack(
+              children: [
+                Container(height: 12, color: const Color(0xFF1A2640)),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Container(
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF60A5FA).withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Container(
+                    height: 12,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                          colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)]),
+                      borderRadius: BorderRadius.circular(7),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF60A5FA).withValues(alpha: 0.55),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      height: 3,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -714,117 +919,366 @@ class _StepsCard extends ConsumerWidget {
   final HealthState health;
   const _StepsCard({required this.health});
 
+  static const _green = Color(0xFF34D399);
+
+  void _showManualDialog(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController(
+        text: health.todaySteps != null ? health.todaySteps.toString() : '');
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Log Steps', style: TextStyle(color: kTextPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: kTextPrimary),
+          decoration: const InputDecoration(
+            labelText: 'Steps today',
+            hintText: 'e.g. 7500',
+            suffixText: 'steps',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final v = int.tryParse(ctrl.text.trim());
+              if (v != null && v >= 0) {
+                ref.read(healthProvider.notifier).logManualSteps(v);
+              }
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     const stepGoal = 10000;
     final steps = health.todaySteps;
     final progress = steps != null ? (steps / stepGoal).clamp(0.0, 1.0) : 0.0;
+    final miles = steps != null ? (steps / 2000.0) : null;
+    final source = health.stepSource;
+
+    String sourceLabel() {
+      switch (source) {
+        case StepSource.fitbit:
+          return health.isLoading ? 'Fitbit · Syncing…' : 'Fitbit';
+        case StepSource.googleFit:
+          return 'Google Fit';
+        case StepSource.pedometer:
+          return 'Phone sensor · Live';
+        case StepSource.manual:
+          return 'Manual';
+        case StepSource.none:
+          return '';
+      }
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCardDark,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A3028), Color(0xFF111827)],
+        ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF34D399).withValues(alpha: 0.06),
+            blurRadius: 16,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.directions_walk, color: Color(0xFF34D399), size: 18),
-                  SizedBox(width: 8),
-                  Text('Steps',
-                      style: TextStyle(
-                          color: kTextPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16)),
-                ],
-              ),
-              if (!health.permissionsGranted)
-                GestureDetector(
-                  onTap: () => ref.read(healthProvider.notifier).requestPermissions(),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF34D399).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF34D399).withValues(alpha: 0.4)),
-                    ),
-                    child: const Text('Connect',
-                        style: TextStyle(
-                            color: Color(0xFF34D399),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12)),
-                  ),
-                )
-              else
-                Text(
-                  steps != null ? '$steps / $stepGoal' : '— / $stepGoal',
-                  style: const TextStyle(color: kTextSecondary, fontSize: 12),
-                ),
-            ],
-          ),
-          if (health.permissionsGranted) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: const Color(0xFF2A3550),
-                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
-                minHeight: 8,
-              ),
-            ),
-            if (health.latestWeightKg != null) ...[
-              const SizedBox(height: 10),
+              const Row(children: [
+                Icon(Icons.directions_walk, color: _green, size: 18),
+                SizedBox(width: 8),
+                Text('Steps',
+                    style: TextStyle(
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+              ]),
               Text(
-                'Scale: ${(health.latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs',
+                steps != null ? '$steps / $stepGoal' : '— / $stepGoal',
                 style: const TextStyle(color: kTextSecondary, fontSize: 12),
               ),
             ],
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: Stack(
               children: [
-                if (health.errorMessage != null)
-                  Expanded(
-                    child: Text(
-                      health.errorMessage!,
-                      style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+                Container(height: 12, color: const Color(0xFF1A2640)),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Container(
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: _green.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(7),
                     ),
-                  )
-                else if (health.isLoading)
-                  const Text('Syncing...', style: TextStyle(color: kTextSecondary, fontSize: 11))
-                else
-                  const Text('Fitbit connected', style: TextStyle(color: Color(0xFF34D399), fontSize: 11)),
-                GestureDetector(
-                  onTap: health.errorMessage != null && health.errorMessage!.contains('expired')
-                      ? () => ref.read(healthProvider.notifier).requestPermissions()
-                      : () => ref.read(healthProvider.notifier).fetchData(),
-                  child: Text(
-                    health.errorMessage != null && health.errorMessage!.contains('expired')
-                        ? 'Reconnect'
-                        : 'Sync now',
-                    style: const TextStyle(
-                      color: Color(0xFF34D399),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Container(
+                    height: 12,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                          colors: [Color(0xFF059669), Color(0xFF34D399)]),
+                      borderRadius: BorderRadius.circular(7),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _green.withValues(alpha: 0.55),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      height: 3,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
-          ] else ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Connect Fitbit for real-time steps and weight tracking.',
-              style: TextStyle(color: kTextSecondary, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 6),
+          // Miles row
+          Row(children: [
+            const Icon(Icons.straighten, color: kTextSecondary, size: 13),
+            const SizedBox(width: 4),
+            Text(
+              miles != null
+                  ? '${miles.toStringAsFixed(2)} mi · ${(miles * 1.60934).toStringAsFixed(2)} km'
+                  : '— mi',
+              style: const TextStyle(color: kTextSecondary, fontSize: 12),
             ),
+          ]),
+          // Source badge
+          if (source != StepSource.none) ...[
+            const SizedBox(height: 4),
+            Text(sourceLabel(),
+                style: const TextStyle(color: _green, fontSize: 11)),
+          ],
+
+          // ── Fitbit controls ──────────────────────────────────────────────
+          if (health.permissionsGranted) ...[
+            if (health.latestWeightKg != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Scale: ${(health.latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs',
+                style: const TextStyle(color: kTextSecondary, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              if (health.errorMessage != null)
+                Expanded(
+                    child: Text(health.errorMessage!,
+                        style: const TextStyle(
+                            color: Colors.redAccent, fontSize: 11)))
+              else
+                const Text('Fitbit connected',
+                    style: TextStyle(color: _green, fontSize: 11)),
+              GestureDetector(
+                onTap: health.errorMessage != null &&
+                        health.errorMessage!.contains('expired')
+                    ? () => ref
+                        .read(healthProvider.notifier)
+                        .requestPermissions()
+                    : () => ref.read(healthProvider.notifier).fetchData(),
+                child: Text(
+                  health.errorMessage != null &&
+                          health.errorMessage!.contains('expired')
+                      ? 'Reconnect'
+                      : 'Sync now',
+                  style: const TextStyle(
+                      color: _green, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+
+          // ── Google Fit controls ─────────────────────────────────────────
+          ] else if (health.googleFitConnected) ...[
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Google Fit connected',
+                  style: TextStyle(color: _green, fontSize: 11)),
+              GestureDetector(
+                onTap: () =>
+                    ref.read(healthProvider.notifier).fetchGoogleFitData(),
+                child: const Text('Sync now',
+                    style: TextStyle(
+                        color: _green,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ]),
+
+          // ── Pedometer controls ──────────────────────────────────────────
+          ] else if (health.pedometerActive) ...[
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Phone sensor active',
+                  style: TextStyle(color: _green, fontSize: 11)),
+              GestureDetector(
+                onTap: () =>
+                    ref.read(healthProvider.notifier).disconnectPedometer(),
+                child: const Text('Disable',
+                    style: TextStyle(
+                        color: kTextSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ]),
+
+          // ── Not connected — show options ────────────────────────────────
+          ] else ...[
+            const SizedBox(height: 12),
+            const Text('Choose a step source:',
+                style: TextStyle(
+                    color: kTextSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+
+            // 1. Phone Pedometer — real-time
+            _SourceOption(
+              icon: Icons.phone_android,
+              label: 'Phone Pedometer',
+              sublabel: 'Real-time · no account needed',
+              onTap: () =>
+                  ref.read(healthProvider.notifier).connectPedometer(),
+            ),
+            const SizedBox(height: 6),
+
+            // 2. Google Fit
+            _SourceOption(
+              icon: Icons.directions_run,
+              label: 'Google Fit',
+              sublabel: 'Also works for Samsung Health (enable sync in Samsung Health → Connected Services)',
+              onTap: () =>
+                  ref.read(healthProvider.notifier).connectGoogleFit(),
+            ),
+            const SizedBox(height: 6),
+
+            // 3. Fitbit
+            _SourceOption(
+              icon: Icons.watch_outlined,
+              label: 'Fitbit',
+              sublabel: 'Requires Fitbit account',
+              onTap: () =>
+                  ref.read(healthProvider.notifier).requestPermissions(),
+            ),
+            const SizedBox(height: 6),
+
+            // 4. Manual
+            _SourceOption(
+              icon: Icons.edit_outlined,
+              label: steps != null ? 'Update manually' : 'Enter manually',
+              sublabel: 'Type today\'s step count',
+              onTap: () => _showManualDialog(context, ref),
+            ),
+
+            if (health.errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(health.errorMessage!,
+                  style: const TextStyle(
+                      color: Colors.redAccent, fontSize: 11, height: 1.3)),
+            ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _SourceOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String sublabel;
+  final VoidCallback onTap;
+  const _SourceOption(
+      {required this.icon,
+      required this.label,
+      required this.sublabel,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF34D399).withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: const Color(0xFF34D399).withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF34D399), size: 17),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13)),
+                  Text(sublabel,
+                      style: const TextStyle(
+                          color: kTextSecondary,
+                          fontSize: 11,
+                          height: 1.3)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right,
+                color: Color(0xFF34D399), size: 18),
+          ],
+        ),
       ),
     );
   }

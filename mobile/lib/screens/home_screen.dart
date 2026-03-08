@@ -161,7 +161,7 @@ class _NavItem extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 64,
+        width: 60,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -173,9 +173,11 @@ class _NavItem extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isActive ? kNeonYellow : kTextSecondary,
-                fontSize: 10,
+                fontSize: 9,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
             ),
