@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart';
+import '../../providers/auth_provider.dart';
 import 'email_login_screen.dart';
+import 'phone_login_screen.dart';
 import 'signup_screen.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends ConsumerWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: kPrimaryDark,
       body: SafeArea(
@@ -29,17 +32,33 @@ class LoginScreen extends StatelessWidget {
                     child: const Icon(Icons.bolt, size: 52, color: Colors.black),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
-                    'SLAYFIT',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 34,
-                      fontWeight: FontWeight.w800,
-                      color: kTextPrimary,
-                      letterSpacing: 4,
-                    ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: const [
+                      Text(
+                        'SLAYFIT',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: kTextPrimary,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                      Text(
+                        'BY SHENNEL',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 11,
+                          color: kNeonYellow,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   const Text(
                     'Move. Sweat. Slay.',
                     style: TextStyle(
@@ -60,15 +79,18 @@ class LoginScreen extends StatelessWidget {
                     icon: _GoogleIcon(),
                     backgroundColor: Colors.white,
                     textColor: Colors.black87,
-                    onTap: () => _showComingSoon(context, 'Google'),
+                    onTap: () => ref.read(authProvider.notifier).signInWithGoogle(),
                   ),
                   const SizedBox(height: 12),
                   _SocialButton(
-                    label: 'Continue with Apple',
-                    icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+                    label: 'Continue with Phone',
+                    icon: const Icon(Icons.phone, color: Colors.white, size: 22),
                     backgroundColor: const Color(0xFF1C1C1E),
                     textColor: Colors.white,
-                    onTap: () => _showComingSoon(context, 'Apple'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PhoneLoginScreen()),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -142,15 +164,6 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  void _showComingSoon(BuildContext context, String provider) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$provider sign in requires additional setup. Use email for now.'),
-        backgroundColor: kCardDark,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
 }
 
 class _SocialButton extends StatelessWidget {

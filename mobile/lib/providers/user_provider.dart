@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/cloud_sync_service.dart';
 
 class UserProfile {
   final String name;
@@ -108,9 +109,11 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
   Future<void> update(UserProfile profile) async {
     state = profile;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_profile', jsonEncode(profile.toJson()));
+    final encoded = jsonEncode(profile.toJson());
+    await prefs.setString('user_profile', encoded);
     // Sync calorie goal for food provider to pick up on next load
     await prefs.setDouble('calorie_goal', profile.dailyCalorieGoal.toDouble());
+    CloudSyncService.upload('user_profile', encoded);
   }
 
   Future<void> refreshFromPrefs() async {

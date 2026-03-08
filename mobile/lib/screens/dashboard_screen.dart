@@ -32,13 +32,26 @@ class DashboardScreen extends ConsumerWidget {
             children: [
               const Icon(Icons.bolt, color: kNeonYellow, size: 22),
               const SizedBox(width: 6),
-              const Text('SLAYFIT',
-                  style: TextStyle(
-                    color: kTextPrimary,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    fontSize: 18,
-                  )),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Text('SLAYFIT',
+                      style: TextStyle(
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        fontSize: 18,
+                      )),
+                  Text('By Shennel',
+                      style: TextStyle(
+                        color: kNeonYellow,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 1,
+                      )),
+                ],
+              ),
             ],
           ),
           actions: [

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/cloud_sync_service.dart';
 
 class WaterEntry {
   final String id;
@@ -79,10 +80,10 @@ class WaterNotifier extends StateNotifier<WaterState> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     final todayEntries = state.todayEntries;
-    await prefs.setString(
-      _todayKey(),
-      jsonEncode(todayEntries.map((e) => e.toJson()).toList()),
-    );
+    final key = _todayKey();
+    final encoded = jsonEncode(todayEntries.map((e) => e.toJson()).toList());
+    await prefs.setString(key, encoded);
+    CloudSyncService.upload(key, encoded);
   }
 
   Future<void> addWater(int amountMl) async {

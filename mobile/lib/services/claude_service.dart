@@ -53,6 +53,60 @@ __WATER_LOG__{"ml":250}__WATER_LOG__
 Convert cups/glasses/bottles to ml (1 cup=240ml, 1 glass=250ml, 1 bottle=500ml). Only include when logging water.""";
   }
 
+  static Future<Map<String, dynamic>> generateGroceryList({
+    required int calorieGoal,
+    required int proteinG,
+    required int carbsG,
+    required int fatG,
+    required String name,
+  }) async {
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_kGroqApiKey',
+      },
+      body: jsonEncode({
+        'model': _kModel,
+        'messages': [
+          {
+            'role': 'system',
+            'content':
+                'You are a nutrition expert. Respond ONLY with valid JSON — no markdown, no explanation, no extra text.',
+          },
+          {
+            'role': 'user',
+            'content':
+                'Create a 7-day meal plan for $name with a daily goal of ${calorieGoal}kcal, ${proteinG}g protein, ${carbsG}g carbs, ${fatG}g fat. '
+                'Then list every unique grocery ingredient needed for the full week. '
+                'Return exactly this JSON structure (no other text): '
+                '{"mealPlan":"Day 1\\nBreakfast: ...\\nLunch: ...\\nDinner: ...\\nSnack: ...\\n\\nDay 2\\n...", '
+                '"groceries":[{"item":"chicken breast","qty":"2 lbs","category":"Protein"}]} '
+                'Category must be one of: Produce, Protein, Dairy, Grains, Pantry, Other.',
+          },
+        ],
+        'max_tokens': 2000,
+      }),
+    ).timeout(const Duration(seconds: 60));
+
+    if (response.statusCode != 200) {
+      throw Exception('api_error_${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final content = data['choices'][0]['message']['content'] as String;
+
+    // Strip any accidental markdown fences the model adds
+    final clean = content
+        .replaceAll(RegExp(r'```json\s*'), '')
+        .replaceAll(RegExp(r'```\s*'), '')
+        .trim();
+
+    return jsonDecode(clean) as Map<String, dynamic>;
+  }
+
   static Future<String> sendMessage({
     required List<Map<String, String>> history,
     required String userMessage,

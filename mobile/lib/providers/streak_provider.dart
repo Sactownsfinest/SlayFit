@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/cloud_sync_service.dart';
 
 class Achievement {
   final String id;
@@ -156,18 +157,17 @@ class StreakNotifier extends StateNotifier<StreakState> {
         .map((a) => {'id': a.id, 'unlockedAt': a.unlockedAt?.toIso8601String()})
         .toList();
 
-    await prefs.setString(
-      'streak_data',
-      jsonEncode({
-        'currentStreak': state.currentStreak,
-        'longestStreak': state.longestStreak,
-        'lastLoggedDate': state.lastLoggedDate,
-        'unlocked_achievements': unlockedAchievements,
-        'totalFoodLogs': state.totalFoodLogs,
-        'totalActivityLogs': state.totalActivityLogs,
-        'goalHitStreak': state.goalHitStreak,
-      }),
-    );
+    final encoded = jsonEncode({
+      'currentStreak': state.currentStreak,
+      'longestStreak': state.longestStreak,
+      'lastLoggedDate': state.lastLoggedDate,
+      'unlocked_achievements': unlockedAchievements,
+      'totalFoodLogs': state.totalFoodLogs,
+      'totalActivityLogs': state.totalActivityLogs,
+      'goalHitStreak': state.goalHitStreak,
+    });
+    await prefs.setString('streak_data', encoded);
+    CloudSyncService.upload('streak_data', encoded);
   }
 
   String _todayStr() {

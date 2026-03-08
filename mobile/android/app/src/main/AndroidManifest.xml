@@ -19,6 +19,14 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!-- url_launcher: allow opening https links (e.g. Instacart) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:label="SlayFit"
         android:name="${applicationName}"

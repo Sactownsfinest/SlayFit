@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/weight_provider.dart';
 import '../providers/food_provider.dart';
+import '../services/cloud_sync_service.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -17,6 +19,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   late PageController _pageController;
   int _currentPage = 0;
 
+  String _name = '';
   String _sex = 'M';
   double _weight = 80;    // always kg internally
   double _height = 170;   // always cm internally
@@ -60,7 +63,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _completeOnboarding() async {
     final calories = _calculateCalorieGoal();
+    final trimmedName = _name.trim().isEmpty ? 'User' : _name.trim();
+    // Save name to shared prefs so other providers pick it up
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', trimmedName);
     final profile = ref.read(userProfileProvider).copyWith(
+          name: trimmedName,
           sex: _sex,
           heightCm: _height,
           goalWeightKg: _goalWeight,
@@ -71,6 +79,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await ref.read(userProfileProvider.notifier).update(profile);
     ref.read(weightProvider.notifier).logWeight(_weight);
     ref.read(foodLogProvider.notifier).setCalorieGoal(calories.toDouble());
+    // Back up everything to cloud before navigating
+    await CloudSyncService.uploadAll();
     ref.read(authProvider.notifier).completeOnboarding();
   }
 
@@ -82,7 +92,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         controller: _pageController,
         onPageChanged: (p) => setState(() => _currentPage = p),
         children: [
-          _Page1(),
+          _Page1(onNameChanged: (v) => setState(() => _name = v)),
           _Page2(
             sex: _sex,
             weight: _weight,
@@ -186,50 +196,96 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 }
 
 // ─── Page 1: Welcome ──────────────────────────────────────────────────────────
-class _Page1 extends StatelessWidget {
+class _Page1 extends StatefulWidget {
+  final ValueChanged<String> onNameChanged;
+  const _Page1({required this.onNameChanged});
+
+  @override
+  State<_Page1> createState() => _Page1State();
+}
+
+class _Page1State extends State<_Page1> {
+  final _nameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(28, 20, 28, 8),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const SizedBox(height: 16),
             Container(
-              width: 100,
-              height: 100,
+              width: 84,
+              height: 84,
               decoration: BoxDecoration(
                 color: kNeonYellow,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(24),
               ),
-              child: const Icon(Icons.bolt, size: 60, color: Colors.black),
+              child: const Icon(Icons.bolt, size: 52, color: Colors.black),
             ),
-            const SizedBox(height: 28),
-            const Text(
-              'Welcome to SLAYFIT',
-              style: TextStyle(
-                  color: kTextPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1),
-              textAlign: TextAlign.center,
+            const SizedBox(height: 16),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: const [
+                Text(
+                  'SLAYFIT',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: kTextPrimary,
+                    letterSpacing: 4,
+                  ),
+                ),
+                Text(
+                  'BY SHENNEL',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 10,
+                    color: kNeonYellow,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             const Text(
               'Your intelligent weight loss companion.\nLet us set up your personalized plan.',
               style: TextStyle(
-                  color: kTextSecondary, fontSize: 15, height: 1.5),
+                  color: kTextSecondary, fontSize: 14, height: 1.5),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _nameController,
+              style: const TextStyle(color: kTextPrimary),
+              onChanged: widget.onNameChanged,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Your Name',
+                hintText: 'What should we call you?',
+                prefixIcon: Icon(Icons.person_outline, color: kTextSecondary),
+              ),
+            ),
+            const SizedBox(height: 24),
             _FeatureRow(
                 icon: Icons.restaurant_outlined,
                 text: 'Track food & calories'),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _FeatureRow(
                 icon: Icons.fitness_center_outlined,
                 text: 'Log workouts & activity'),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _FeatureRow(
                 icon: Icons.trending_down,
                 text: 'Monitor your weight loss'),

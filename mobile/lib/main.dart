@@ -247,15 +247,31 @@ class _SplashScreenState extends State<SplashScreen>
                   child: const Icon(Icons.bolt, size: 56, color: Colors.black),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'SLAYFIT',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: kTextPrimary,
-                    letterSpacing: 5,
-                  ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: const [
+                    Text(
+                      'SLAYFIT',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: kTextPrimary,
+                        letterSpacing: 5,
+                      ),
+                    ),
+                    Text(
+                      'BY SHENNEL',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 11,
+                        color: kNeonYellow,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 const Text(

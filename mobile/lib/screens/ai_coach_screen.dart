@@ -12,11 +12,13 @@ import '../providers/streak_provider.dart';
 import '../providers/weight_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/claude_service.dart';
+import 'grocery_list_screen.dart';
 
 enum _VoiceState { idle, listening, thinking, speaking }
 
 class AiCoachScreen extends ConsumerStatefulWidget {
-  const AiCoachScreen({super.key});
+  final bool wakeUp;
+  const AiCoachScreen({super.key, this.wakeUp = false});
 
   @override
   ConsumerState<AiCoachScreen> createState() => _AiCoachScreenState();
@@ -69,9 +71,13 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
 
   Future<void> _initTts() async {
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.50);
-    await _tts.setPitch(1.05);
+    await _tts.setSpeechRate(0.47);
+    await _tts.setPitch(0.88);
     await _tts.setVolume(1.0);
+    // Try Google's higher-quality neural voice (falls back silently if unavailable)
+    try {
+      await _tts.setVoice({'name': 'en-us-x-tpf-local', 'locale': 'en-US'});
+    } catch (_) {}
     _tts.setCompletionHandler(() {
       if (mounted) {
         setState(() => _voiceState = _VoiceState.idle);
@@ -118,6 +124,11 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
                 isAutoTip: m['isAutoTip'] as bool? ?? false,
               )));
         });
+        // Wake-up: speak greeting even when history exists
+        if (widget.wakeUp && !_greeted) {
+          _greeted = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _wakeUpGreet());
+        }
         return;
       }
     }
@@ -126,6 +137,14 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
       _greeted = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _sendGreeting());
     }
+  }
+
+  Future<void> _wakeUpGreet() async {
+    final name = ref.read(userProfileProvider).name;
+    final firstName =
+        name.split(' ').first.isNotEmpty ? name.split(' ').first : name;
+    if (!mounted) return;
+    await _speak('Hi $firstName, how can I help you today?');
   }
 
   Future<void> _saveHistory() async {
@@ -212,7 +231,6 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
         });
         if (result.finalResult &&
             result.recognizedWords.trim().isNotEmpty) {
-          setState(() => _voiceState = _VoiceState.thinking);
           _sendMessage();
         }
       },
@@ -690,6 +708,16 @@ class _AiCoachScreenState extends ConsumerState<AiCoachScreen>
                       ? null
                       : () => _sendToApi(
                           'Give me a short motivational pep talk based on my progress.'),
+                ),
+                const SizedBox(width: 8),
+                ActionChip(
+                  label: const Text('Grocery List'),
+                  avatar: const Icon(Icons.shopping_cart_outlined, size: 16),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const GroceryListScreen()),
+                  ),
                 ),
               ],
             ),

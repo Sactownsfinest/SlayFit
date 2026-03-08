@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/cloud_sync_service.dart';
 
 class WeightEntry {
   final String id;
@@ -75,10 +76,9 @@ class WeightNotifier extends StateNotifier<WeightState> {
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'weight_history',
-      jsonEncode(state.entries.map((e) => e.toJson()).toList()),
-    );
+    final encoded = jsonEncode(state.entries.map((e) => e.toJson()).toList());
+    await prefs.setString('weight_history', encoded);
+    CloudSyncService.upload('weight_history', encoded);
   }
 
   void logWeight(double weightKg, {String? note}) {

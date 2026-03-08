@@ -1,15 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../providers/activity_provider.dart';
 import '../providers/records_provider.dart';
 import '../providers/workout_provider.dart';
-import '../providers/user_provider.dart';
-import '../providers/weight_provider.dart';
 import '../data/workout_library.dart';
 import '../data/guided_classes.dart';
 import '../services/youtube_service.dart';
@@ -232,53 +228,6 @@ class _WorkoutsTab extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => const _CreatePlanSheet(),
-    );
-  }
-}
-
-class _EmptyWorkoutsState extends StatelessWidget {
-  final VoidCallback onCreateTap;
-  const _EmptyWorkoutsState({required this.onCreateTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: kNeonYellow.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.fitness_center,
-                  color: kNeonYellow, size: 36),
-            ),
-            const SizedBox(height: 20),
-            const Text('No Workout Plans Yet',
-                style: TextStyle(
-                    color: kTextPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18)),
-            const SizedBox(height: 8),
-            const Text(
-              'Create a plan with exercises, sets, and reps. Then start a session to track your progress.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: kTextSecondary, fontSize: 13, height: 1.5),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: onCreateTap,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Create First Plan'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

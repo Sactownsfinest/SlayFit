@@ -422,7 +422,8 @@ class _GuidedClassPlayerScreenState extends State<GuidedClassPlayerScreen>
                 IconButton(
                   icon: const Icon(Icons.close, color: kTextSecondary),
                   onPressed: () async {
-                    if (await _onWillPop()) Navigator.pop(context);
+                    final nav = Navigator.of(context);
+                    if (await _onWillPop()) nav.pop();
                   },
                 ),
                 Expanded(

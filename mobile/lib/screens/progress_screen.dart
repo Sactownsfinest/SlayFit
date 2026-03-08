@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/weight_provider.dart';
-import '../providers/activity_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/water_provider.dart';
 import '../providers/streak_provider.dart';
@@ -391,7 +390,6 @@ class _WeeklyInsightsCardState extends ConsumerState<_WeeklyInsightsCard> {
   Future<void> _loadWeekData() async {
     final prefs = await SharedPreferences.getInstance();
     final profile = ref.read(userProfileProvider);
-    final activity = ref.read(activityProvider);
     final goal = profile.dailyCalorieGoal.toDouble();
 
     double totalCalories = 0;
@@ -421,11 +419,25 @@ class _WeeklyInsightsCardState extends ConsumerState<_WeeklyInsightsCard> {
       }
     }
 
-    // Total active minutes from last 7 days
-    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-    final activeMinutes = activity.entries
-        .where((e) => e.loggedAt.isAfter(sevenDaysAgo))
-        .fold(0, (s, e) => s + e.durationMinutes);
+    // Total active minutes from last 7 days (read per-day keys)
+    int activeMinutes = 0;
+    for (int i = 0; i < 7; i++) {
+      final date = DateTime.now().subtract(Duration(days: i));
+      final dayStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final actKey = 'activity_log_$dayStr';
+      final actJson = prefs.getString(actKey);
+      if (actJson != null) {
+        final List actList = jsonDecode(actJson);
+        for (final item in actList) {
+          activeMinutes += (item['durationMinutes'] as num).toInt();
+        }
+      }
+      // Also add any Fitbit active minutes cached for today
+      if (i == 0) {
+        final fitbitMins = prefs.getInt('fitbit_active_minutes') ?? 0;
+        activeMinutes += fitbitMins;
+      }
+    }
 
     if (mounted) {
       setState(() {
@@ -1373,12 +1385,21 @@ class _ProgressPhotosCardState extends State<_ProgressPhotosCard> {
     final raw = prefs.getString(_prefsKey);
     if (raw != null) {
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-      setState(() => _entries = list.map((e) => {'path': e['path'] as String, 'ts': e['ts'] as String}).toList());
+      final entries = list
+          .map((e) => {'path': e['path'] as String, 'ts': e['ts'] as String})
+          .where((e) => File(e['path']!).existsSync())
+          .toList();
+      setState(() => _entries = entries);
+      // Persist cleaned list if any stale entries were removed
+      if (entries.length != list.length) _persist();
     } else {
-      // Migrate old gallery list if exists
+      // Migrate old gallery list if exists — only keep files that still exist
       final old = prefs.getStringList('progress_photos') ?? [];
       if (old.isNotEmpty) {
-        _entries = old.map((p) => {'path': p, 'ts': DateTime.now().toIso8601String()}).toList();
+        _entries = old
+            .where((p) => File(p).existsSync())
+            .map((p) => {'path': p, 'ts': DateTime.now().toIso8601String()})
+            .toList();
         _persist();
       }
     }

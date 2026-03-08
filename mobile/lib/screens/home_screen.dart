@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openCoach() {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const AiCoachScreen(),
+        pageBuilder: (_, __, ___) => const AiCoachScreen(wakeUp: true),
         transitionsBuilder: (_, animation, __, child) => SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0, 1),
@@ -49,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _selectedIndex,
         children: _screens,
       ),
-      floatingActionButton: _GlowingCoachFab(onTap: _openCoach),
+      floatingActionButton: _selectedIndex == 4 ? null : _GlowingCoachFab(onTap: _openCoach),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'streak_provider.dart';
+import '../services/cloud_sync_service.dart';
 
 enum ActivityCategory { cardio, strength, flexibility, sports, other }
 
@@ -115,10 +116,9 @@ class ActivityNotifier extends StateNotifier<ActivityState>
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _todayKey,
-      jsonEncode(state.entries.map((e) => e.toJson()).toList()),
-    );
+    final encoded = jsonEncode(state.entries.map((e) => e.toJson()).toList());
+    await prefs.setString(_todayKey, encoded);
+    CloudSyncService.upload(_todayKey, encoded);
   }
 
   void logActivity({

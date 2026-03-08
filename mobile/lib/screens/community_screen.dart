@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import '../main.dart';
 import '../providers/activity_provider.dart';
 import '../providers/streak_provider.dart';
@@ -610,7 +611,8 @@ class _CreateChallengeSheetState
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -750,6 +752,7 @@ class _CreateChallengeSheetState
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -980,10 +983,51 @@ class _ChatTab extends ConsumerStatefulWidget {
 class _ChatTabState extends ConsumerState<_ChatTab> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final SpeechToText _speech = SpeechToText();
   bool _sending = false;
+  bool _speechAvailable = false;
+  bool _listening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    final ok = await _speech.initialize();
+    if (mounted) setState(() => _speechAvailable = ok);
+  }
+
+  Future<void> _toggleMic() async {
+    if (_listening) {
+      await _speech.stop();
+      setState(() => _listening = false);
+      if (_inputCtrl.text.trim().isNotEmpty) _send();
+      return;
+    }
+    setState(() {
+      _listening = true;
+      _inputCtrl.clear();
+    });
+    await _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() => _inputCtrl.text = result.recognizedWords);
+        if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+          setState(() => _listening = false);
+          _send();
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en_US',
+    );
+  }
 
   @override
   void dispose() {
+    _speech.stop();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -1053,14 +1097,37 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
           ),
           child: Row(
             children: [
+              if (_speechAvailable) ...[
+                GestureDetector(
+                  onTap: _toggleMic,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: _listening ? kNeonYellow : kCardDark,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _listening ? kNeonYellow : const Color(0xFF2A3550),
+                      ),
+                    ),
+                    child: Icon(
+                      _listening ? Icons.mic : Icons.mic_none,
+                      color: _listening ? Colors.black : kTextSecondary,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: TextField(
                   controller: _inputCtrl,
                   style: const TextStyle(color: kTextPrimary, fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'Say something...',
-                    hintStyle:
-                        const TextStyle(color: kTextSecondary),
+                    hintText: _listening ? 'Listening...' : 'Say something...',
+                    hintStyle: TextStyle(
+                      color: _listening ? kNeonYellow : kTextSecondary,
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),
                     filled: true,

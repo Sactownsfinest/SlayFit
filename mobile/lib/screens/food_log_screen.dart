@@ -755,7 +755,8 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+          bottom: MediaQuery.of(context).viewInsets.bottom +
+              MediaQuery.of(context).viewPadding.bottom),
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(

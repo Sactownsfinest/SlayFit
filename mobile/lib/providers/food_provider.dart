@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'streak_provider.dart';
+import '../services/cloud_sync_service.dart';
 
 enum MealType { breakfast, lunch, dinner, snack }
 
@@ -159,18 +160,16 @@ class FoodLogNotifier extends StateNotifier<FoodLogState>
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _todayKey,
-      jsonEncode(state.entries.map((e) => e.toJson()).toList()),
-    );
+    final encoded = jsonEncode(state.entries.map((e) => e.toJson()).toList());
+    await prefs.setString(_todayKey, encoded);
+    CloudSyncService.upload(_todayKey, encoded);
   }
 
   Future<void> _saveTemplates() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'meal_templates',
-      jsonEncode(state.templates.map((t) => t.toJson()).toList()),
-    );
+    final encoded = jsonEncode(state.templates.map((t) => t.toJson()).toList());
+    await prefs.setString('meal_templates', encoded);
+    CloudSyncService.upload('meal_templates', encoded);
   }
 
   void addEntry(FoodEntry entry) {

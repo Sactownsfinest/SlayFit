@@ -235,7 +235,7 @@ class _BodyScanScreenState extends ConsumerState<BodyScanScreen> {
       if (byteData == null) throw Exception('Could not decode image');
 
       final profile = ref.read(userProfileProvider);
-      final heightCm = (profile.heightCm ?? 170.0).clamp(100.0, 250.0);
+      final heightCm = profile.heightCm.clamp(100.0, 250.0);
 
       // Process in background isolate (pure Dart, no Flutter APIs)
       final input = _IsolateInput(
