@@ -83,7 +83,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       await ref.read(userProfileProvider.notifier).update(profile);
       ref.read(weightProvider.notifier).logWeight(_weight);
       ref.read(foodLogProvider.notifier).setCalorieGoal(calories.toDouble());
-      // Back up everything to cloud before navigating
+      // Mark onboarding complete BEFORE uploadAll so Firestore gets the correct value
+      await prefs.setBool('onboarding_completed', true);
       await CloudSyncService.uploadAll();
       ref.read(authProvider.notifier).completeOnboarding();
     } catch (e) {

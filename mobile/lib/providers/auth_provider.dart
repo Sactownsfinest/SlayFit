@@ -70,10 +70,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final user = userCredential.user;
       final uid = user?.uid ?? '';
       final email = user?.email ?? googleUser.email;
-      final restored = await CloudSyncService.restore(uid);
+      bool restored = await CloudSyncService.restore(uid);
       if (!restored) {
         final emailUid = CloudSyncService.emailToUid(email);
-        if (emailUid != uid) await CloudSyncService.restore(emailUid);
+        if (emailUid != uid) restored = await CloudSyncService.restore(emailUid);
       }
       final prefs = await SharedPreferences.getInstance();
       final existingName = prefs.getString('user_name') ?? '';
@@ -83,9 +83,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
       await prefs.setString('user_email', email);
       await prefs.setBool('is_logged_in', true);
+      await prefs.setBool('onboarding_completed', true);
       await CloudSyncService.initUser(email);
-      final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
-      state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+      state = AuthState.authenticated();
       return true;
     } catch (_) {
       return false;
@@ -186,9 +186,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
       await prefs.setString('user_email', email);
       await prefs.setBool('is_logged_in', true);
+      await prefs.setBool('onboarding_completed', true);
       await CloudSyncService.initUser(email);
-      final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
-      state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+      state = AuthState.authenticated();
     } catch (e) {
       state = AuthState.unauthenticated(error: 'Google sign-in failed: $e');
     }
