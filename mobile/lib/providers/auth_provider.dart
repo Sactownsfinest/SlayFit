@@ -38,20 +38,58 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await CloudSyncService.loadUserId();
     final prefs = await SharedPreferences.getInstance();
     final loggedIn = prefs.getBool('is_logged_in') ?? false;
-    if (!loggedIn) {
-      state = AuthState.unauthenticated();
-      return;
-    }
-    // Guard against broken state: logged_in=true but no email means
-    // a previous sign-up was interrupted. Send back to login screen.
     final email = prefs.getString('user_email');
-    if (email == null || email.isEmpty) {
-      await prefs.setBool('is_logged_in', false);
-      state = AuthState.unauthenticated();
+
+    if (!loggedIn || email == null || email.isEmpty) {
+      // Try silent Google sign-in — restores session after reinstall or data clear
+      final didRestore = await _trySilentGoogleSignIn();
+      if (!didRestore) {
+        await prefs.setBool('is_logged_in', false);
+        state = AuthState.unauthenticated();
+      }
       return;
     }
+
     final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
     state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+  }
+
+  /// Attempts a silent Google sign-in (no UI shown). Restores Firestore data.
+  /// Returns true if sign-in succeeded and state was updated.
+  Future<bool> _trySilentGoogleSignIn() async {
+    try {
+      final googleUser = await GoogleSignIn().signInSilently();
+      if (googleUser == null) return false;
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+      final uid = user?.uid ?? '';
+      final email = user?.email ?? googleUser.email;
+      final restored = await CloudSyncService.restore(uid);
+      if (!restored) {
+        final emailUid = CloudSyncService.emailToUid(email);
+        if (emailUid != uid) await CloudSyncService.restore(emailUid);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final existingName = prefs.getString('user_name') ?? '';
+      if (existingName.isEmpty) {
+        await prefs.setString(
+            'user_name', user?.displayName ?? googleUser.displayName ?? '');
+      }
+      await prefs.setString('user_email', email);
+      await prefs.setBool('is_logged_in', true);
+      await CloudSyncService.initUser(email);
+      final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
+      state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> signInWithEmail(String email, String password) async {

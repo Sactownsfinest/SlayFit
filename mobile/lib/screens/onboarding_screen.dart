@@ -221,15 +221,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 }
 
 // ─── Page 1: Welcome ──────────────────────────────────────────────────────────
-class _Page1 extends StatefulWidget {
+class _Page1 extends ConsumerStatefulWidget {
   final ValueChanged<String> onNameChanged;
   const _Page1({required this.onNameChanged});
 
   @override
-  State<_Page1> createState() => _Page1State();
+  ConsumerState<_Page1> createState() => _Page1State();
 }
 
-class _Page1State extends State<_Page1> {
+class _Page1State extends ConsumerState<_Page1> {
   final _nameController = TextEditingController();
 
   @override
@@ -325,6 +325,14 @@ class _Page1State extends State<_Page1> {
             _FeatureRow(
                 icon: Icons.trending_down,
                 text: 'Monitor your weight loss'),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => ref.read(authProvider.notifier).signInWithGoogle(),
+              child: const Text(
+                'Already have an account? Sign in',
+                style: TextStyle(color: kTextSecondary, fontSize: 13),
+              ),
+            ),
             const Spacer(),
           ],
         ),
