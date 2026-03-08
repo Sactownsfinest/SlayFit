@@ -368,7 +368,7 @@ class ProfileScreen extends ConsumerWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => Share.share(
                     'Hey! Join me on SlayFit — the fitness app I\'ve been using to crush my goals! 💪⚡\n\n'
-                    'Download it here: https://appdistribution.firebase.dev/i/b170cd7640debdb1',
+                    'Download it here: https://github.com/Sactownsfinest/SlayFit/releases/tag/Slayfit',
                   ),
                   icon: const Icon(Icons.person_add_outlined, color: Colors.black),
                   label: const Text('Invite Friends', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),

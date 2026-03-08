@@ -42,6 +42,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = AuthState.unauthenticated();
       return;
     }
+    // Guard against broken state: logged_in=true but no email means
+    // a previous sign-up was interrupted. Send back to login screen.
+    final email = prefs.getString('user_email');
+    if (email == null || email.isEmpty) {
+      await prefs.setBool('is_logged_in', false);
+      state = AuthState.unauthenticated();
+      return;
+    }
     final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
     state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();
   }
@@ -49,20 +57,35 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> signInWithEmail(String email, String password) async {
     state = AuthState.loading();
     final prefs = await SharedPreferences.getInstance();
-    final storedEmail = prefs.getString('user_email');
+    var storedEmail = prefs.getString('user_email');
+
+    // On fresh install or wiped device, local credentials are gone.
+    // Attempt a cloud restore first so we can validate against restored data.
+    if (storedEmail == null) {
+      await CloudSyncService.restore(CloudSyncService.emailToUid(email));
+      storedEmail = prefs.getString('user_email');
+    }
+
     final storedHash = prefs.getString('user_password_hash');
     // Also accept old plaintext entries so existing users aren't locked out,
     // then migrate them to the hashed format on successful login.
     final oldPlaintext = prefs.getString('user_password');
     final hashMatches = storedHash == _hashPassword(email, password);
     final plaintextMatches = oldPlaintext != null && oldPlaintext == password;
-    if (storedEmail == email && (hashMatches || plaintextMatches)) {
-      // Migrate plaintext to hash if needed
+    // After a cloud restore, password_hash is missing (sensitive key — not synced).
+    // If the email matches what was restored, trust the provided password and re-set the hash.
+    final restoredWithoutHash =
+        storedEmail == email && storedHash == null && oldPlaintext == null;
+
+    if (storedEmail == email && (hashMatches || plaintextMatches || restoredWithoutHash)) {
+      // Migrate plaintext → hash, or re-set hash after cloud restore
       if (plaintextMatches && !hashMatches) {
         await prefs.setString('user_password_hash', _hashPassword(email, password));
         await prefs.remove('user_password');
+      } else if (restoredWithoutHash) {
+        await prefs.setString('user_password_hash', _hashPassword(email, password));
       }
-      await CloudSyncService.restore(CloudSyncService.emailToUid(email));
+      await CloudSyncService.initUser(email);
       await prefs.setBool('is_logged_in', true);
       final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
       state = onboardingDone ? AuthState.authenticated() : AuthState.onboarding();

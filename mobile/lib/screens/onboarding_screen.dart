@@ -241,12 +241,12 @@ class _Page1State extends State<_Page1> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(28, 20, 28, 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 0, 28, 8),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(height: 16),
+            const Spacer(),
             Container(
               width: 84,
               height: 84,
@@ -298,8 +298,7 @@ class _Page1State extends State<_Page1> {
             const SizedBox(height: 6),
             const Text(
               'Your intelligent weight loss companion.\nLet us set up your personalized plan.',
-              style: TextStyle(
-                  color: kTextSecondary, fontSize: 14, height: 1.5),
+              style: TextStyle(color: kTextSecondary, fontSize: 14, height: 1.5),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -314,7 +313,7 @@ class _Page1State extends State<_Page1> {
                 prefixIcon: Icon(Icons.person_outline, color: kTextSecondary),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
             _FeatureRow(
                 icon: Icons.restaurant_outlined,
                 text: 'Track food & calories'),
@@ -326,6 +325,7 @@ class _Page1State extends State<_Page1> {
             _FeatureRow(
                 icon: Icons.trending_down,
                 text: 'Monitor your weight loss'),
+            const Spacer(),
           ],
         ),
       ),

@@ -103,16 +103,12 @@ class HealthNotifier extends StateNotifier<HealthState>
         final token = await _fitbit.getValidAccessToken();
         if (token != null) {
           await fetchData();
-          _startFitbitPolling();
-        } else {
-          state = state.copyWith(
-              errorMessage: 'Fitbit session expired. Please reconnect.');
         }
+        // If token is null, polling will retry — don't show error with cached data
       } catch (_) {
-        state = state.copyWith(
-            errorMessage: 'Could not reach Fitbit. Will retry when online.');
-        _startFitbitPolling();
+        // Network error on init — silent, polling will retry
       }
+      _startFitbitPolling();
       return; // Fitbit takes priority — don't init other sources
     }
 
@@ -232,10 +228,15 @@ class HealthNotifier extends StateNotifier<HealthState>
           msg.contains('Failed host lookup') ||
           msg.contains('No address associated') ||
           msg.contains('errno = 7');
+      // Silently ignore transient token errors when we have cached data
+      // — token refresh will succeed on the next poll
+      final isTransientToken = msg.contains('No valid Fitbit token') ||
+          msg.contains('token') && state.todaySteps != null;
+      final suppress = isNetworkError || isTransientToken;
       state = state.copyWith(
         isLoading: false,
-        errorMessage: isNetworkError ? null : msg.replaceFirst('Exception: ', ''),
-        clearError: isNetworkError,
+        errorMessage: suppress ? null : msg.replaceFirst('Exception: ', ''),
+        clearError: suppress,
       );
     }
   }
