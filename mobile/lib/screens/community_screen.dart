@@ -121,7 +121,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
           : TabBarView(
               controller: _tab,
               children: [
-                _AllChallengesTab(),
+                _ChallengesTab(displayName: _displayName),
                 _MyProgressTab(),
                 _LeaderboardTab(),
                 _ChatTab(displayName: _displayName),
@@ -1305,7 +1305,7 @@ class _ChallengeCard extends StatelessWidget {
                 onTap: () => Share.share(
                   'Join my "${challenge.title}" challenge on SlayFit! 💪\n\n'
                   'Use code: ${challenge.joinCode}\n\n'
-                  'Download SlayFit: https://appdistribution.firebase.dev/i/b170cd7640debdb1',
+                  'Download SlayFit: https://github.com/Sactownsfinest/SlayFit/releases/tag/Slayfit',
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
