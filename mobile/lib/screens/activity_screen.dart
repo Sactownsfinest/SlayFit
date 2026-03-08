@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -620,16 +621,8 @@ class _AiGuidedWorkoutCardState extends ConsumerState<_AiGuidedWorkoutCard> {
               ],
             ),
             const SizedBox(height: 8),
-            YoutubePlayerBuilder(
-              player: YoutubePlayer(
-                controller: _playerController!,
-                showVideoProgressIndicator: true,
-                progressIndicatorColor: kNeonYellow,
-              ),
-              builder: (context, player) => ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: player,
-              ),
+            _VideoPlayerWithFullscreen(
+              controller: _playerController!,
             ),
             const SizedBox(height: 12),
             if (_completed)
@@ -1126,16 +1119,8 @@ class _CategoryVideosSheetState
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
                   if (_playing != null) ...[
-                    YoutubePlayerBuilder(
-                      player: YoutubePlayer(
-                        controller: _playerController!,
-                        showVideoProgressIndicator: true,
-                        progressIndicatorColor: kNeonYellow,
-                      ),
-                      builder: (context, player) => ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: player,
-                      ),
+                    _VideoPlayerWithFullscreen(
+                      controller: _playerController!,
                     ),
                     const SizedBox(height: 8),
                     if (_completed)
@@ -1497,16 +1482,8 @@ class _LibraryPlanPreviewSheetState
               ),
             )
           else if (_videoController != null)
-            YoutubePlayerBuilder(
-              player: YoutubePlayer(
-                controller: _videoController!,
-                showVideoProgressIndicator: true,
-                progressColors: const ProgressBarColors(
-                  playedColor: kNeonYellow,
-                  handleColor: kNeonYellow,
-                ),
-              ),
-              builder: (ctx, player) => player,
+            _VideoPlayerWithFullscreen(
+              controller: _videoController!,
             )
           else
             Container(
@@ -2186,17 +2163,42 @@ class _StartWorkoutSheetState extends ConsumerState<_StartWorkoutSheet> {
   late Timer _timer;
   int _elapsed = 0; // seconds
   final Set<String> _completedSets = {}; // 'exerciseId_setIndex'
+  YoutubePlayerController? _videoController;
+  bool _loadingVideo = true;
+
   @override
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _elapsed++);
     });
+    _loadGuidedVideo();
+  }
+
+  Future<void> _loadGuidedVideo() async {
+    final query =
+        '${widget.plan.name} workout guided instructor full routine';
+    final videoId = await YouTubeService.searchVideoId(query);
+    if (!mounted) return;
+    setState(() {
+      _loadingVideo = false;
+      if (videoId != null) {
+        _videoController = YoutubePlayerController(
+          initialVideoId: videoId,
+          flags: const YoutubePlayerFlags(
+            autoPlay: false,
+            mute: false,
+            enableCaption: true,
+          ),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _timer.cancel();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -2290,6 +2292,27 @@ class _StartWorkoutSheetState extends ConsumerState<_StartWorkoutSheet> {
               ],
             ),
           ),
+          // Guided video
+          if (_loadingVideo)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: SizedBox(
+                height: 40,
+                child: Center(
+                    child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            color: kNeonYellow, strokeWidth: 2))),
+              ),
+            )
+          else if (_videoController != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _VideoPlayerWithFullscreen(
+                controller: _videoController!,
+              ),
+            ),
           // Progress bar
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -2939,4 +2962,108 @@ extension WorkoutPlanX on WorkoutPlan {
         exercises: exercises ?? this.exercises,
         createdAt: createdAt ?? this.createdAt,
       );
+}
+
+// ── Full-screen video player ───────────────────────────────────────────────────
+// Intercepts the YouTube player's built-in full-screen button and pushes a
+// proper full-screen page over the entire app (rootNavigator: true).
+
+class _VideoPlayerWithFullscreen extends StatefulWidget {
+  final YoutubePlayerController controller;
+  final BorderRadius borderRadius;
+  const _VideoPlayerWithFullscreen({
+    required this.controller,
+    this.borderRadius = const BorderRadius.all(Radius.circular(10)),
+  });
+
+  @override
+  State<_VideoPlayerWithFullscreen> createState() =>
+      _VideoPlayerWithFullscreenState();
+}
+
+class _VideoPlayerWithFullscreenState
+    extends State<_VideoPlayerWithFullscreen> {
+  bool _intercepting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerUpdate);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerUpdate);
+    super.dispose();
+  }
+
+  void _onControllerUpdate() {
+    if (widget.controller.value.isFullScreen && !_intercepting && mounted) {
+      _intercepting = true;
+      widget.controller.toggleFullScreenMode(); // cancel package's handling
+      Navigator.of(context, rootNavigator: true)
+          .push(MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) =>
+                _FullScreenVideoPage(controller: widget.controller),
+          ))
+          .then((_) => _intercepting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: widget.borderRadius,
+      child: YoutubePlayer(
+        controller: widget.controller,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: kNeonYellow,
+      ),
+    );
+  }
+}
+
+class _FullScreenVideoPage extends StatefulWidget {
+  final YoutubePlayerController controller;
+  const _FullScreenVideoPage({required this.controller});
+
+  @override
+  State<_FullScreenVideoPage> createState() => _FullScreenVideoPageState();
+}
+
+class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: YoutubePlayer(
+          controller: widget.controller,
+          showVideoProgressIndicator: true,
+          progressColors: const ProgressBarColors(
+            playedColor: kNeonYellow,
+            handleColor: kNeonYellow,
+          ),
+        ),
+      ),
+    );
+  }
 }

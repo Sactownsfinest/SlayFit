@@ -287,10 +287,10 @@ class ProfileScreen extends ConsumerWidget {
                         context: context,
                         builder: (_) => AlertDialog(
                           backgroundColor: kCardDark,
-                          title: const Text('Reset Challenges & Badges',
+                          title: const Text('Reset Daily Challenges',
                               style: TextStyle(color: kTextPrimary, fontSize: 16)),
                           content: const Text(
-                              'This will clear all completed challenges and earned badges. Continue?',
+                              'This will clear your active and completed challenges so you can start fresh. Your badges and streak are not affected.',
                               style: TextStyle(color: kTextSecondary, fontSize: 14)),
                           actions: [
                             TextButton(
@@ -308,7 +308,6 @@ class ProfileScreen extends ConsumerWidget {
                       );
                       if (confirm == true) {
                         await ref.read(challengesProvider.notifier).resetAll();
-                        await ref.read(streakProvider.notifier).resetAchievements();
                       }
                     },
                     child: const Text('Reset',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -105,6 +106,12 @@ class ChallengesState {
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
 
+// IDs of all daily (1-day) challenges — these reset every day
+final _dailyChallengeIds = kAllChallenges
+    .where((c) => c.durationDays == 1)
+    .map((c) => c.id)
+    .toSet();
+
 class ChallengesNotifier extends StateNotifier<ChallengesState> {
   ChallengesNotifier() : super(const ChallengesState()) {
     _load();
@@ -112,6 +119,13 @@ class ChallengesNotifier extends StateNotifier<ChallengesState> {
 
   static const _keyActive = 'challenges_active_v2';
   static const _keyCompleted = 'challenges_completed_v2';
+  Timer? _midnightTimer;
+
+  @override
+  void dispose() {
+    _midnightTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -129,8 +143,57 @@ class ChallengesNotifier extends StateNotifier<ChallengesState> {
         : <String>[];
 
     state = ChallengesState(active: active, completedIds: completed);
-    // Note: _processCompletions() is NOT called here — only called after
-    // explicit check-in to avoid auto-completing challenges on load.
+    await _resetDailyChallenges(); // reset any stale daily challenges on load
+    _scheduleMidnightReset();
+  }
+
+  // ── Daily midnight reset at PST ──────────────────────────────────────────
+
+  void _scheduleMidnightReset() {
+    _midnightTimer?.cancel();
+    // PST = UTC-8
+    final nowUtc = DateTime.now().toUtc();
+    final nowPst = nowUtc.add(const Duration(hours: -8));
+    final nextMidnight =
+        DateTime(nowPst.year, nowPst.month, nowPst.day + 1, 0, 0, 0);
+    final delay = nextMidnight.difference(nowPst);
+    _midnightTimer = Timer(delay, () async {
+      await _resetDailyChallenges();
+      _scheduleMidnightReset(); // reschedule for the next midnight
+    });
+  }
+
+  /// Resets all daily (1-day) challenges:
+  /// - Removes them from completedIds so they can be joined again
+  /// - Resets active daily challenges that were completed on a previous day
+  Future<void> _resetDailyChallenges() async {
+    final today = UserChallenge._todayStr();
+    bool changed = false;
+
+    // Reset active daily challenges completed before today
+    final updatedActive = state.active.map((c) {
+      if (_dailyChallengeIds.contains(c.definitionId) &&
+          c.completedDates.isNotEmpty &&
+          !c.completedDates.contains(today)) {
+        changed = true;
+        return UserChallenge(
+          definitionId: c.definitionId,
+          startDate: DateTime.now(),
+          completedDates: [],
+        );
+      }
+      return c;
+    }).toList();
+
+    // Remove daily challenges from completedIds — they repeat daily
+    final updatedCompleted =
+        state.completedIds.where((id) => !_dailyChallengeIds.contains(id)).toList();
+
+    if (changed || updatedCompleted.length != state.completedIds.length) {
+      state = state.copyWith(
+          active: updatedActive, completedIds: updatedCompleted);
+      await _save();
+    }
   }
 
   Future<void> _save() async {
