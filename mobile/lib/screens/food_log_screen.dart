@@ -1441,91 +1441,17 @@ class _CreateRecipeSheetState extends State<_CreateRecipeSheet> {
     super.dispose();
   }
 
+  // ── Ingredient search via USDA ──────────────────────────────────────────────
+
   void _addIngredient() {
-    final nameC = TextEditingController();
-    final calC = TextEditingController();
-    final proC = TextEditingController();
-    final carC = TextEditingController();
-    final fatC = TextEditingController();
-    final amtC = TextEditingController(text: '100');
-
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceDark,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Add Ingredient',
-            style: TextStyle(color: kTextPrimary)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ingField('Name', nameC),
-              _ingField('Amount (g)', amtC,
-                  type: TextInputType.number),
-              _ingField('Calories', calC,
-                  type: TextInputType.number),
-              _ingField('Protein (g)', proC,
-                  type: TextInputType.number),
-              _ingField('Carbs (g)', carC,
-                  type: TextInputType.number),
-              _ingField('Fat (g)', fatC,
-                  type: TextInputType.number),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel',
-                  style: TextStyle(color: kTextSecondary))),
-          ElevatedButton(
-            onPressed: () {
-              if (nameC.text.trim().isEmpty) return;
-              setState(() {
-                _ingredients.add(RecipeIngredient(
-                  name: nameC.text.trim(),
-                  calories:
-                      double.tryParse(calC.text) ?? 0,
-                  protein:
-                      double.tryParse(proC.text) ?? 0,
-                  carbs: double.tryParse(carC.text) ?? 0,
-                  fat: double.tryParse(fatC.text) ?? 0,
-                  amountG:
-                      double.tryParse(amtC.text) ?? 100,
-                ));
-              });
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: kNeonYellow,
-                foregroundColor: Colors.black),
-            child: const Text('Add',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _ingField(String label, TextEditingController ctrl,
-      {TextInputType type = TextInputType.text}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextField(
-        controller: ctrl,
-        keyboardType: type,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: kTextSecondary),
-          filled: true,
-          fillColor: kCardDark,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none),
-        ),
+      isScrollControlled: true,
+      backgroundColor: kSurfaceDark,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _IngredientSearchSheet(
+        onAdded: (ing) => setState(() => _ingredients.add(ing)),
       ),
     );
   }
@@ -1697,6 +1623,239 @@ class _CreateRecipeSheetState extends State<_CreateRecipeSheet> {
                               fontWeight: FontWeight.bold)),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Ingredient Search Sheet (USDA) ────────────────────────────────────────────
+
+class _IngredientSearchSheet extends StatefulWidget {
+  final void Function(RecipeIngredient) onAdded;
+  const _IngredientSearchSheet({required this.onAdded});
+
+  @override
+  State<_IngredientSearchSheet> createState() => _IngredientSearchSheetState();
+}
+
+class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
+  final _searchCtrl = TextEditingController();
+  final _amtCtrl = TextEditingController(text: '100');
+  Timer? _debounce;
+  List<Map<String, dynamic>> _results = [];
+  Map<String, dynamic>? _selected;
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _amtCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () => _search(q));
+  }
+
+  Future<void> _search(String query) async {
+    if (query.trim().length < 2) {
+      setState(() => _results = []);
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final uri = Uri.parse(
+        'https://api.nal.usda.gov/fdc/v1/foods/search'
+        '?query=${Uri.encodeComponent(query.trim())}'
+        '&pageSize=15'
+        '&dataType=Foundation,SR%20Legacy,Branded'
+        '&api_key=ksmVttTD7HULBghripcKmMyao7wzpzOd72swy5Kl',
+      );
+      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200 && mounted) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final foods = (data['foods'] as List?) ?? [];
+        setState(() {
+          _results = foods.map<Map<String, dynamic>>((f) {
+            final nutrients = (f['foodNutrients'] as List?) ?? [];
+            double getN(int id) =>
+                (nutrients.firstWhere((n) => n['nutrientId'] == id,
+                        orElse: () => {})['value'] as num?)
+                    ?.toDouble() ??
+                0;
+            return {
+              'name': f['description'] as String? ?? '',
+              'cal': getN(1008),
+              'p': getN(1003),
+              'c': getN(1005),
+              'f': getN(1004),
+            };
+          }).where((f) => (f['name'] as String).isNotEmpty).toList();
+        });
+      }
+    } catch (_) {} finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _pick(Map<String, dynamic> food) {
+    setState(() {
+      _selected = food;
+      _searchCtrl.text = food['name'] as String;
+      _results = [];
+    });
+  }
+
+  void _confirm() {
+    final food = _selected;
+    if (food == null) return;
+    final grams = double.tryParse(_amtCtrl.text) ?? 100;
+    final ratio = grams / 100;
+    widget.onAdded(RecipeIngredient(
+      name: food['name'] as String,
+      calories: ((food['cal'] as double) * ratio),
+      protein: ((food['p'] as double) * ratio),
+      carbs: ((food['c'] as double) * ratio),
+      fat: ((food['f'] as double) * ratio),
+      amountG: grams,
+    ));
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Column(
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 16),
+              decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  const Expanded(child: Text('Add Ingredient', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 17))),
+                  IconButton(icon: const Icon(Icons.close, color: kTextSecondary), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                onChanged: (v) {
+                  _onSearchChanged(v);
+                  if (_selected != null) setState(() => _selected = null);
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search food database…',
+                  hintStyle: const TextStyle(color: kTextSecondary),
+                  prefixIcon: _searching
+                      ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kNeonYellow)))
+                      : const Icon(Icons.search, color: kTextSecondary),
+                  filled: true,
+                  fillColor: kCardDark,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                children: [
+                  if (_results.isNotEmpty)
+                    ..._results.map((food) => ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      title: Text(food['name'] as String,
+                          style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                      subtitle: Text(
+                          '${(food['cal'] as double).toInt()} kcal · P ${(food['p'] as double).toInt()}g · C ${(food['c'] as double).toInt()}g · F ${(food['f'] as double).toInt()}g  (per 100g)',
+                          style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                      onTap: () => _pick(food),
+                    )),
+                  if (_selected != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: kCardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: kNeonYellow.withValues(alpha: 0.4)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_selected!['name'] as String,
+                              style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                          const SizedBox(height: 12),
+                          Row(children: [
+                            const Text('Amount (g):', style: TextStyle(color: kTextSecondary)),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 90,
+                              child: TextField(
+                                controller: _amtCtrl,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: kSurfaceDark,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                              ),
+                            ),
+                          ]),
+                          const SizedBox(height: 10),
+                          Builder(builder: (_) {
+                            final g = double.tryParse(_amtCtrl.text) ?? 100;
+                            final r = g / 100;
+                            final s = _selected!;
+                            return Text(
+                              '${((s['cal'] as double) * r).toInt()} kcal · '
+                              'P ${((s['p'] as double) * r).toStringAsFixed(1)}g · '
+                              'C ${((s['c'] as double) * r).toStringAsFixed(1)}g · '
+                              'F ${((s['f'] as double) * r).toStringAsFixed(1)}g',
+                              style: const TextStyle(color: kNeonYellow, fontSize: 12, fontWeight: FontWeight.bold),
+                            );
+                          }),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _confirm,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kNeonYellow,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: const Text('Add to Recipe', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

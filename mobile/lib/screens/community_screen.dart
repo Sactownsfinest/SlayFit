@@ -12,7 +12,6 @@ import '../providers/food_provider.dart';
 import '../providers/challenges_provider.dart';
 import '../providers/health_provider.dart';
 import '../providers/water_provider.dart';
-import '../providers/workout_provider.dart';
 import '../providers/user_provider.dart';
 import '../data/challenge_definitions.dart';
 import '../services/firebase_service.dart';
@@ -219,122 +218,6 @@ Color _catColor(ChallengeCategory c) {
     case ChallengeCategory.lifestyle: return const Color(0xFF34C759);
     case ChallengeCategory.social:    return const Color(0xFF007AFF);
     case ChallengeCategory.signature: return const Color(0xFFBF5AF2);
-  }
-}
-
-// ── All Challenges Tab (catalog browser) ─────────────────────────────────────
-
-class _AllChallengesTab extends ConsumerWidget {
-  const _AllChallengesTab();
-
-  static const _order = [
-    ChallengeCategory.signature,
-    ChallengeCategory.daily,
-    ChallengeCategory.weekly,
-    ChallengeCategory.social,
-    ChallengeCategory.thirtyDay,
-    ChallengeCategory.lifestyle,
-  ];
-
-  static const _headers = {
-    ChallengeCategory.signature: '⚡ Signature Slayfit',
-    ChallengeCategory.daily:     '🔆 Daily Slay',
-    ChallengeCategory.weekly:    '📆 Weekly Consistency',
-    ChallengeCategory.social:    '👥 Community',
-    ChallengeCategory.thirtyDay: '🔥 30-Day Transformations',
-    ChallengeCategory.lifestyle: '🌿 Lifestyle',
-  };
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(challengesProvider);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-      children: [
-        for (final cat in _order) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(_headers[cat]!, style: TextStyle(color: _catColor(cat), fontWeight: FontWeight.bold, fontSize: 13)),
-          ),
-          ...kAllChallenges.where((c) => c.category == cat).map((def) {
-            final isJoined = state.isJoined(def.id);
-            final isDone = state.isCompleted(def.id);
-            final color = _catColor(def.category);
-            return GestureDetector(
-              onTap: () => _showChallengeDetail(context, ref, def),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: kCardDark,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isJoined ? color.withValues(alpha: 0.5) : const Color(0xFF2A3550),
-                    width: isJoined ? 1.5 : 1,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-                        child: Center(child: Text(def.badgeEmoji, style: const TextStyle(fontSize: 22))),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(children: [
-                              Expanded(child: Text(def.name, style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14))),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(5)),
-                                child: Text(def.durationLabel, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
-                              ),
-                            ]),
-                            const SizedBox(height: 3),
-                            Text(def.tagline, style: const TextStyle(color: kTextSecondary, fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (isDone)
-                        Icon(Icons.check_circle, color: color, size: 22)
-                      else if (isJoined)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(14)),
-                          child: Text('Active', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-                        )
-                      else
-                        GestureDetector(
-                          onTap: () {
-                            ref.read(challengesProvider.notifier).joinChallenge(def.id);
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('Challenge accepted: ${def.name}'),
-                              backgroundColor: color,
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 2),
-                            ));
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
-                            child: const Text('Join', style: TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 14),
-        ],
-      ],
-    );
   }
 }
 
@@ -897,23 +780,7 @@ class _ChallengesTabState extends ConsumerState<_ChallengesTab> {
               ],
             ),
             const SizedBox(height: 20),
-            if (challenges.isEmpty) ...[
-              const SizedBox(height: 40),
-              const Icon(Icons.emoji_events_outlined,
-                  color: kTextSecondary, size: 48),
-              const SizedBox(height: 12),
-              const Text('No active challenges',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: kTextPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              const Text(
-                  'Create a challenge and share the code\nwith friends to compete!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: kTextSecondary, fontSize: 13)),
-            ] else ...[
+            if (challenges.isNotEmpty) ...[
               Text('Your Active Challenges (${challenges.length})',
                   style: const TextStyle(
                       color: kTextPrimary,
@@ -926,12 +793,126 @@ class _ChallengesTabState extends ConsumerState<_ChallengesTab> {
                     onSync: () => _syncScore(c),
                     onInviteUser: () => _showInviteUserDialog(context, c),
                   )),
+              const SizedBox(height: 8),
             ],
+            // ── Challenge Catalog ──────────────────────────────────────────
+            const Divider(color: Color(0xFF2A3550)),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Challenge Catalog',
+                  style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            ..._buildCatalog(ref),
           ],
         );
       },
     );
   }
+
+  List<Widget> _buildCatalog(WidgetRef ref) {
+    const order = [
+      ChallengeCategory.signature,
+      ChallengeCategory.daily,
+      ChallengeCategory.weekly,
+      ChallengeCategory.social,
+      ChallengeCategory.thirtyDay,
+      ChallengeCategory.lifestyle,
+    ];
+    const headers = {
+      ChallengeCategory.signature: '⚡ Signature Slayfit',
+      ChallengeCategory.daily:     '🔆 Daily Slay',
+      ChallengeCategory.weekly:    '📆 Weekly Consistency',
+      ChallengeCategory.social:    '👥 Community',
+      ChallengeCategory.thirtyDay: '🔥 30-Day Transformations',
+      ChallengeCategory.lifestyle: '🌿 Lifestyle',
+    };
+    final state = ref.watch(challengesProvider);
+    final widgets = <Widget>[];
+    for (final cat in order) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(headers[cat]!, style: TextStyle(color: _catColor(cat), fontWeight: FontWeight.bold, fontSize: 13)),
+      ));
+      for (final def in kAllChallenges.where((c) => c.category == cat)) {
+        final isJoined = state.isJoined(def.id);
+        final isDone = state.isCompleted(def.id);
+        final color = _catColor(def.category);
+        widgets.add(GestureDetector(
+          onTap: () => _showChallengeDetail(context, ref, def),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: kCardDark,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isJoined ? color.withValues(alpha: 0.5) : const Color(0xFF2A3550),
+                width: isJoined ? 1.5 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+                    child: Center(child: Text(def.badgeEmoji, style: const TextStyle(fontSize: 22))),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Expanded(child: Text(def.name, style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14))),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(5)),
+                            child: Text(def.durationLabel, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
+                        ]),
+                        const SizedBox(height: 3),
+                        Text(def.tagline, style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (isDone)
+                    Icon(Icons.check_circle, color: color, size: 22)
+                  else if (isJoined)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(14)),
+                      child: Text('Active', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () {
+                        ref.read(challengesProvider.notifier).joinChallenge(def.id);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Challenge accepted: ${def.name}'),
+                          backgroundColor: color,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
+                        child: const Text('Join', style: TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ));
+      }
+      widgets.add(const SizedBox(height: 14));
+    }
+    return widgets;
+  }
+
 
   Future<void> _syncScore(SlayChallenge challenge) async {
     final uid = FirebaseService.uid;
