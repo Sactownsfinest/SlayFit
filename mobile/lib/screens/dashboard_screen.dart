@@ -1120,14 +1120,18 @@ class _StepsCard extends ConsumerWidget {
                     style: TextStyle(color: _green, fontSize: 11)),
               GestureDetector(
                 onTap: health.errorMessage != null &&
-                        health.errorMessage!.contains('expired')
+                        (health.errorMessage!.contains('reconnect') ||
+                         health.errorMessage!.contains('expired') ||
+                         health.errorMessage!.contains('401'))
                     ? () => ref
                         .read(healthProvider.notifier)
                         .requestPermissions()
                     : () => ref.read(healthProvider.notifier).fetchData(),
                 child: Text(
                   health.errorMessage != null &&
-                          health.errorMessage!.contains('expired')
+                          (health.errorMessage!.contains('reconnect') ||
+                           health.errorMessage!.contains('expired') ||
+                           health.errorMessage!.contains('401'))
                       ? 'Reconnect'
                       : 'Sync now',
                   style: const TextStyle(

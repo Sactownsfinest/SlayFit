@@ -56,6 +56,9 @@ dependencies:
   # Real-time phone pedometer (Android step counter hardware sensor)
   pedometer: ^4.0.0
 
+  # Runtime permission requests (ACTIVITY_RECOGNITION for pedometer)
+  permission_handler: ^11.3.1
+
   # Progress photos (pick from gallery or camera)
   image_picker: ^1.1.2
 

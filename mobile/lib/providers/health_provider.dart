@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/fitbit_service.dart';
 import '../services/google_fit_service.dart';
@@ -228,11 +229,8 @@ class HealthNotifier extends StateNotifier<HealthState>
           msg.contains('Failed host lookup') ||
           msg.contains('No address associated') ||
           msg.contains('errno = 7');
-      // Silently ignore transient token errors when we have cached data
-      // — token refresh will succeed on the next poll
-      final isTransientToken = msg.contains('No valid Fitbit token') ||
-          msg.contains('token') && state.todaySteps != null;
-      final suppress = isNetworkError || isTransientToken;
+      // Never suppress token errors — show Reconnect prompt
+      final suppress = isNetworkError;
       state = state.copyWith(
         isLoading: false,
         errorMessage: suppress ? null : msg.replaceFirst('Exception: ', ''),
@@ -326,6 +324,16 @@ class HealthNotifier extends StateNotifier<HealthState>
   // ── Pedometer (real-time phone sensor) ────────────────────────────────────
 
   Future<void> _startPedometer() async {
+    // Request ACTIVITY_RECOGNITION at runtime (required on Android 10+)
+    final status = await Permission.activityRecognition.request();
+    if (status.isDenied || status.isPermanentlyDenied) {
+      state = state.copyWith(
+        pedometerActive: false,
+        stepSource: StepSource.none,
+        errorMessage: 'Activity permission denied. Enable it in phone Settings to use the pedometer.',
+      );
+      return;
+    }
     await PedometerService.init();
     _pedometerSub?.cancel();
     _pedometerSub = PedometerService.todayStepsStream.listen(
