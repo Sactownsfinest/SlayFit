@@ -564,6 +564,8 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
 
   // Base macros for 1 serving — recalculated when serving count changes
   double _baseCal = 0, _baseProt = 0, _baseCarbs = 0, _baseFat = 0;
+  double? _servingGrams; // grams per 1 serving from USDA (null = per 100g mode)
+  String _servingInfo = ''; // e.g. "1 serving = 85g (3 oz)"
 
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
@@ -587,7 +589,8 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     _fatController.text = (_baseFat * servings).toStringAsFixed(1);
   }
 
-  void _setBaseValues(double cal, double prot, double carbs, double fat) {
+  void _setBaseValues(double cal, double prot, double carbs, double fat,
+      {double? servingGrams, String? householdServing}) {
     _baseCal = cal;
     _baseProt = prot;
     _baseCarbs = carbs;
@@ -597,6 +600,15 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
     _carbsController.text = carbs.toStringAsFixed(1);
     _fatController.text = fat.toStringAsFixed(1);
     _servingController.text = '1';
+    _servingGrams = servingGrams;
+    if (servingGrams != null && servingGrams > 0) {
+      final gLabel = '${servingGrams.toInt()}g';
+      _servingInfo = householdServing != null && householdServing.isNotEmpty
+          ? '1 serving = $householdServing ($gLabel)'
+          : '1 serving = $gLabel';
+    } else {
+      _servingInfo = '';
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -690,10 +702,12 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                 0;
             return {
               'name': f['description'] as String? ?? '',
-              'cal': getN(1008),
+              'cal': getN(1008),  // per 100g
               'p': getN(1003),
               'c': getN(1005),
               'f': getN(1004),
+              'servingG': (f['servingSize'] as num?)?.toDouble(),
+              'household': f['householdServingFullText'] as String?,
             };
           }).where((f) => (f['name'] as String).isNotEmpty).take(10).toList();
         });
@@ -750,7 +764,9 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
           carbs: double.tryParse(_carbsController.text) ?? 0,
           fat: double.tryParse(_fatController.text) ?? 0,
           servingSize: double.tryParse(_servingController.text) ?? 1,
-          servingUnit: 'serving',
+          servingUnit: _servingGrams != null
+              ? '${_servingGrams!.toInt()}g serving'
+              : 'serving',
           meal: widget.meal,
           loggedAt: DateTime.now(),
         ));
@@ -854,13 +870,20 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                     final food = _searchResults[i];
                     return InkWell(
                       onTap: () {
+                        final servG = food['servingG'] as double?;
+                        final cal = food['cal'] as double;
+                        final p = food['p'] as double;
+                        final c = food['c'] as double;
+                        final f = food['f'] as double;
                         _nameController.text = food['name'] as String;
-                        _setBaseValues(
-                          food['cal'] as double,
-                          food['p'] as double,
-                          food['c'] as double,
-                          food['f'] as double,
-                        );
+                        if (servG != null && servG > 0) {
+                          final r = servG / 100;
+                          _setBaseValues(cal * r, p * r, c * r, f * r,
+                              servingGrams: servG,
+                              householdServing: food['household'] as String?);
+                        } else {
+                          _setBaseValues(cal, p, c, f);
+                        }
                         _searchController.clear();
                         setState(() => _searchResults = []);
                       },
@@ -870,16 +893,30 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                food['name'] as String,
-                                style: const TextStyle(
-                                    color: kTextPrimary, fontSize: 13),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    food['name'] as String,
+                                    style: const TextStyle(
+                                        color: kTextPrimary, fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (food['servingG'] != null)
+                                    Text(
+                                      '1 srv = ${(food['servingG'] as double).toInt()}g'
+                                      '${food['household'] != null ? ' (${food['household']})' : ''}',
+                                      style: const TextStyle(
+                                          color: kTextSecondary, fontSize: 10),
+                                    ),
+                                ],
                               ),
                             ),
                             Text(
-                              '${(food['cal'] as double).toStringAsFixed(0)} kcal/srv',
+                              food['servingG'] != null
+                                  ? '${((food['cal'] as double) * (food['servingG'] as double) / 100).toStringAsFixed(0)} kcal/srv'
+                                  : '${(food['cal'] as double).toStringAsFixed(0)} kcal/100g',
                               style: const TextStyle(
                                   color: kNeonYellow,
                                   fontSize: 11,
@@ -942,10 +979,22 @@ class _AddFoodSheetState extends ConsumerState<_AddFoodSheet> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _InputField(
-                    controller: _servingController,
-                    label: 'Serving',
-                    keyboardType: TextInputType.number,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _InputField(
+                        controller: _servingController,
+                        label: 'Servings',
+                        keyboardType: TextInputType.number,
+                      ),
+                      if (_servingInfo.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, left: 4),
+                          child: Text(_servingInfo,
+                              style: const TextStyle(
+                                  color: kTextSecondary, fontSize: 10)),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -1650,6 +1699,7 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
   List<Map<String, dynamic>> _results = [];
   Map<String, dynamic>? _selected;
   bool _searching = false;
+  bool _scanningBarcode = false;
 
   @override
   void dispose() {
@@ -1692,10 +1742,12 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
                 0;
             return {
               'name': f['description'] as String? ?? '',
-              'cal': getN(1008),
+              'cal': getN(1008),  // per 100g
               'p': getN(1003),
               'c': getN(1005),
               'f': getN(1004),
+              'servingG': (f['servingSize'] as num?)?.toDouble(),
+              'household': f['householdServingFullText'] as String?,
             };
           }).where((f) => (f['name'] as String).isNotEmpty).toList();
         });
@@ -1705,11 +1757,78 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
     }
   }
 
+  Future<void> _scanBarcode() async {
+    setState(() => _scanningBarcode = true);
+    try {
+      final barcode = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const _BarcodeScannerPage()),
+      );
+      if (barcode == null || !mounted) return;
+      setState(() => _searching = true);
+      final uri = Uri.parse(
+          'https://world.openfoodfacts.org/api/v0/product/$barcode.json');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200 && mounted) {
+        final data = jsonDecode(resp.body);
+        if (data['status'] == 1) {
+          final product = data['product'] as Map<String, dynamic>;
+          final n = (product['nutriments'] as Map?) ?? {};
+          final hasSrv = n.containsKey('energy-kcal_serving');
+          final servSizeG = (product['serving_quantity'] as num?)?.toDouble();
+          final cal = ((hasSrv ? n['energy-kcal_serving'] : n['energy-kcal_100g']) ?? 0 as num).toDouble();
+          final p = ((hasSrv ? n['proteins_serving'] : n['proteins_100g']) ?? 0 as num).toDouble();
+          final c = ((hasSrv ? n['carbohydrates_serving'] : n['carbohydrates_100g']) ?? 0 as num).toDouble();
+          final f = ((hasSrv ? n['fat_serving'] : n['fat_100g']) ?? 0 as num).toDouble();
+          // Convert to per-100g so the gram-based ratio logic works
+          final per100 = servSizeG != null && servSizeG > 0 && hasSrv;
+          final ratio = per100 ? 100 / servSizeG : 1.0;
+          setState(() {
+            _selected = {
+              'name': product['product_name'] ?? 'Unknown',
+              'cal': cal * ratio,
+              'p': p * ratio,
+              'c': c * ratio,
+              'f': f * ratio,
+              'servingG': servSizeG,
+              'household': product['serving_size'] as String?,
+            };
+            _searchCtrl.text = product['product_name'] ?? 'Unknown';
+            _results = [];
+            if (servSizeG != null && servSizeG > 0) {
+              _amtCtrl.text = servSizeG.toInt().toString();
+            }
+          });
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Product not found in database')),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to look up barcode')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _searching = false; _scanningBarcode = false; });
+    }
+  }
+
   void _pick(Map<String, dynamic> food) {
+    final servG = food['servingG'] as double?;
     setState(() {
       _selected = food;
       _searchCtrl.text = food['name'] as String;
       _results = [];
+      // Default amount to 1 serving if available, else 100g
+      if (servG != null && servG > 0) {
+        _amtCtrl.text = servG.toInt().toString();
+      } else {
+        _amtCtrl.text = '100';
+      }
     });
   }
 
@@ -1739,11 +1858,13 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
         maxChildSize: 0.95,
         builder: (_, controller) => Column(
           children: [
+            // Drag handle
             Container(
               width: 40, height: 4,
               margin: const EdgeInsets.only(top: 12, bottom: 16),
               decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
             ),
+            // Header
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -1753,43 +1874,83 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
                 ],
               ),
             ),
+            // Search bar + barcode button
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                onChanged: (v) {
-                  _onSearchChanged(v);
-                  if (_selected != null) setState(() => _selected = null);
-                },
-                decoration: InputDecoration(
-                  hintText: 'Search food database…',
-                  hintStyle: const TextStyle(color: kTextSecondary),
-                  prefixIcon: _searching
-                      ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kNeonYellow)))
-                      : const Icon(Icons.search, color: kTextSecondary),
-                  filled: true,
-                  fillColor: kCardDark,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      onChanged: (v) {
+                        _onSearchChanged(v);
+                        if (_selected != null) setState(() => _selected = null);
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Search food database…',
+                        hintStyle: const TextStyle(color: kTextSecondary),
+                        prefixIcon: _searching
+                            ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kNeonYellow)))
+                            : const Icon(Icons.search, color: kTextSecondary),
+                        filled: true,
+                        fillColor: kCardDark,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _scanBarcode,
+                    child: Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        color: kCardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF2A3550)),
+                      ),
+                      child: const Icon(Icons.qr_code_scanner, color: kNeonYellow, size: 24),
+                    ),
+                  ),
+                ],
               ),
             ),
+            // Results + selected card
             Expanded(
               child: ListView(
                 controller: controller,
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 children: [
                   if (_results.isNotEmpty)
-                    ..._results.map((food) => ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      title: Text(food['name'] as String,
-                          style: const TextStyle(color: kTextPrimary, fontSize: 13)),
-                      subtitle: Text(
-                          '${(food['cal'] as double).toInt()} kcal · P ${(food['p'] as double).toInt()}g · C ${(food['c'] as double).toInt()}g · F ${(food['f'] as double).toInt()}g  (per 100g)',
-                          style: const TextStyle(color: kTextSecondary, fontSize: 11)),
-                      onTap: () => _pick(food),
-                    )),
+                    ..._results.map((food) {
+                      final servG = food['servingG'] as double?;
+                      final household = food['household'] as String?;
+                      final calPer = servG != null && servG > 0
+                          ? (food['cal'] as double) * servG / 100
+                          : food['cal'] as double;
+                      final unit = servG != null ? 'kcal/srv' : 'kcal/100g';
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        title: Text(food['name'] as String,
+                            style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${calPer.toInt()} $unit · P ${(food['p'] as double).toInt()}g · C ${(food['c'] as double).toInt()}g · F ${(food['f'] as double).toInt()}g',
+                              style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                            ),
+                            if (servG != null)
+                              Text(
+                                '1 srv = ${servG.toInt()}g${household != null ? ' ($household)' : ''}',
+                                style: const TextStyle(color: kTextSecondary, fontSize: 10),
+                              ),
+                          ],
+                        ),
+                        onTap: () => _pick(food),
+                      );
+                    }),
                   if (_selected != null) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -1804,27 +1965,55 @@ class _IngredientSearchSheetState extends State<_IngredientSearchSheet> {
                         children: [
                           Text(_selected!['name'] as String,
                               style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                          // Serving size reference
+                          if (_selected!['servingG'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '1 serving = ${(_selected!['servingG'] as double).toInt()}g'
+                              '${_selected!['household'] != null ? ' (${_selected!['household']})' : ''}',
+                              style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                            ),
+                          ],
                           const SizedBox(height: 12),
-                          Row(children: [
-                            const Text('Amount (g):', style: TextStyle(color: kTextSecondary)),
-                            const SizedBox(width: 12),
-                            SizedBox(
-                              width: 90,
-                              child: TextField(
-                                controller: _amtCtrl,
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                onChanged: (_) => setState(() {}),
-                                decoration: InputDecoration(
-                                  filled: true,
-                                  fillColor: kSurfaceDark,
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          Row(
+                            children: [
+                              const Text('Amount (g):', style: TextStyle(color: kTextSecondary)),
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                width: 90,
+                                child: TextField(
+                                  controller: _amtCtrl,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  onChanged: (_) => setState(() {}),
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: kSurfaceDark,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ]),
+                              // "Use 1 serving" shortcut
+                              if (_selected!['servingG'] != null) ...[
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: () => setState(() =>
+                                      _amtCtrl.text = (_selected!['servingG'] as double).toInt().toString()),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: kNeonYellow.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+                                    ),
+                                    child: const Text('1 srv', style: TextStyle(color: kNeonYellow, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                           const SizedBox(height: 10),
                           Builder(builder: (_) {
                             final g = double.tryParse(_amtCtrl.text) ?? 100;
