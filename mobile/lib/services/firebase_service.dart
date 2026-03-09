@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -302,16 +303,35 @@ class FirebaseService {
   }
 
   static Stream<List<SlayChallenge>> myChallengesStream() {
-    if (uid == null) return Stream.value([]);
-    return _db
-        .collection('challenges')
-        .where('participantIds', arrayContains: uid)
-        .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => SlayChallenge.fromFirestore(
-                d.id, d.data()))
-            .where((c) => c.isActive)
-            .toList());
+    // Switch the Firestore query whenever the Firebase Auth user changes
+    // (e.g. anonymous → Google). Without this, a UID captured at startup
+    // becomes stale and the query returns nothing after re-auth.
+    StreamSubscription? innerSub;
+    StreamSubscription? authSub;
+    late StreamController<List<SlayChallenge>> controller;
+    controller = StreamController<List<SlayChallenge>>(
+      onCancel: () {
+        innerSub?.cancel();
+        authSub?.cancel();
+      },
+    );
+    authSub = _auth.authStateChanges().listen((user) {
+      innerSub?.cancel();
+      if (user == null) {
+        controller.add([]);
+        return;
+      }
+      innerSub = _db
+          .collection('challenges')
+          .where('participantIds', arrayContains: user.uid)
+          .snapshots()
+          .map((snap) => snap.docs
+              .map((d) => SlayChallenge.fromFirestore(d.id, d.data()))
+              .where((c) => c.isActive)
+              .toList())
+          .listen(controller.add, onError: controller.addError);
+    });
+    return controller.stream;
   }
 
   static Future<void> updateMyScore(
