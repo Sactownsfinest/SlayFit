@@ -232,30 +232,46 @@ class _MyProgressTab extends ConsumerWidget {
     final active = state.active;
     final completedIds = state.completedIds;
 
-    if (active.isEmpty && completedIds.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🏁', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 16),
-            const Text('No challenges yet', style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('Go to Challenges tab and join your first one.', style: TextStyle(color: kTextSecondary)),
-          ],
-        ),
-      );
-    }
+    return StreamBuilder<List<SlayChallenge>>(
+      stream: FirebaseService.myChallengesStream(),
+      builder: (context, snap) {
+        final fbChallenges = snap.data ?? [];
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-      children: [
-        if (active.isNotEmpty) ...[
-          const Text('Active', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
-          const SizedBox(height: 10),
-          ...active.map((uc) => _ActiveChallengeCard(uc: uc)),
-          const SizedBox(height: 20),
-        ],
+        if (active.isEmpty && completedIds.isEmpty && fbChallenges.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('🏁', style: TextStyle(fontSize: 48)),
+                SizedBox(height: 16),
+                Text('No challenges yet', style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                Text('Go to Challenges tab and join your first one.', style: TextStyle(color: kTextSecondary)),
+              ],
+            ),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+          children: [
+            if (active.isNotEmpty) ...[
+              const Text('Active', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(height: 10),
+              ...active.map((uc) => _ActiveChallengeCard(uc: uc)),
+              const SizedBox(height: 20),
+            ],
+            if (fbChallenges.isNotEmpty) ...[
+              const Text('Multiplayer', style: TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(height: 10),
+              ...fbChallenges.map((c) => _ChallengeCard(
+                    challenge: c,
+                    ref: ref,
+                    onSync: () {},
+                    onInviteUser: () {},
+                  )),
+              const SizedBox(height: 20),
+            ],
         if (completedIds.isNotEmpty) ...[
           const Text('Completed Badges', style: TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 10),
@@ -289,6 +305,8 @@ class _MyProgressTab extends ConsumerWidget {
           ),
         ],
       ],
+    );
+      },
     );
   }
 }
@@ -440,6 +458,8 @@ class _ActiveChallengeCard extends ConsumerWidget {
     if (allMet && !isManual && !checkedIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(challengesProvider.notifier).checkInToday(def.id);
+        final newScore = (uc.completedDates.length + 1).toDouble();
+        FirebaseService.syncCatalogChallengeScore(def.id, newScore);
       });
     }
 
@@ -587,9 +607,9 @@ class _ActiveChallengeCard extends ConsumerWidget {
             if (isManual && !checkedIn)
               GestureDetector(
                 onTap: () {
-                  ref
-                      .read(challengesProvider.notifier)
-                      .checkInToday(def.id);
+                  ref.read(challengesProvider.notifier).checkInToday(def.id);
+                  final newScore = (uc.completedDates.length + 1).toDouble();
+                  FirebaseService.syncCatalogChallengeScore(def.id, newScore);
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text('${def.badgeEmoji} Checked in!'),
                     backgroundColor: color,
@@ -685,6 +705,7 @@ void _showChallengeDetail(BuildContext context, WidgetRef ref, ChallengeDefiniti
                         }
                       : () {
                           ref.read(challengesProvider.notifier).joinChallenge(def.id);
+                          FirebaseService.createChallengeFromDefinition(def);
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text('Challenge accepted: ${def.name}'),
@@ -705,13 +726,19 @@ void _showChallengeDetail(BuildContext context, WidgetRef ref, ChallengeDefiniti
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => Share.share(
-                  'I\'m doing the "${def.name}" challenge on SlayFit! ${def.badgeEmoji}\n\n'
-                  '"${def.tagline}"\n\n'
-                  'Join me — download SlayFit: https://appdistribution.firebase.dev/i/b170cd7640debdb1',
-                ),
-                icon: const Icon(Icons.share, size: 16),
-                label: const Text('Invite a Friend to This Challenge'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: kSurfaceDark,
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                    builder: (_) => _InviteUserSheet(def: def),
+                  );
+                },
+                icon: const Icon(Icons.person_add_outlined, size: 16),
+                label: const Text('Invite a Friend'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: kTextSecondary,
                   side: const BorderSide(color: Color(0xFF2A3550)),
@@ -727,6 +754,144 @@ void _showChallengeDetail(BuildContext context, WidgetRef ref, ChallengeDefiniti
   );
 }
 
+// ── Invite User Sheet ──────────────────────────────────────────────────────────
+
+class _InviteUserSheet extends StatefulWidget {
+  final ChallengeDefinition def;
+  const _InviteUserSheet({required this.def});
+
+  @override
+  State<_InviteUserSheet> createState() => _InviteUserSheetState();
+}
+
+class _InviteUserSheetState extends State<_InviteUserSheet> {
+  final _searchCtrl = TextEditingController();
+  List<Map<String, String>> _users = [];
+  List<Map<String, String>> _filtered = [];
+  bool _loading = true;
+  final Set<String> _sent = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final users = await FirebaseService.getAllUsers();
+    if (mounted) setState(() { _users = users; _filtered = users; _loading = false; });
+  }
+
+  void _onSearch(String q) {
+    final query = q.trim().toLowerCase();
+    setState(() {
+      _filtered = query.isEmpty
+          ? _users
+          : _users.where((u) => (u['displayName'] ?? '').toLowerCase().contains(query)).toList();
+    });
+  }
+
+  Future<void> _invite(Map<String, String> user) async {
+    final toUid = user['uid']!;
+    setState(() => _sent.add(toUid));
+    await FirebaseService.sendCatalogChallengeInvite(toUid: toUid, def: widget.def);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Invite sent to ${user['displayName']}!'),
+        backgroundColor: kNeonYellow.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      builder: (_, controller) => Column(
+        children: [
+          Container(
+            width: 40, height: 4,
+            margin: const EdgeInsets.only(top: 12, bottom: 16),
+            decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              Expanded(child: Text('Invite to "${widget.def.name}"',
+                  style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16))),
+              IconButton(icon: const Icon(Icons.close, color: kTextSecondary), onPressed: () => Navigator.pop(context)),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: _onSearch,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search users…',
+                hintStyle: const TextStyle(color: kTextSecondary),
+                prefixIcon: const Icon(Icons.search, color: kTextSecondary),
+                filled: true,
+                fillColor: kCardDark,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: kNeonYellow))
+                : _filtered.isEmpty
+                    ? Center(child: Text(
+                        _users.isEmpty ? 'No other users yet.' : 'No users match your search.',
+                        style: const TextStyle(color: kTextSecondary)))
+                    : ListView.builder(
+                        controller: controller,
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        itemCount: _filtered.length,
+                        itemBuilder: (_, i) {
+                          final user = _filtered[i];
+                          final uid = user['uid']!;
+                          final sent = _sent.contains(uid);
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: kNeonYellow.withValues(alpha: 0.15),
+                              child: Text((user['displayName'] ?? '?')[0].toUpperCase(),
+                                  style: const TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold)),
+                            ),
+                            title: Text(user['displayName'] ?? 'Unknown',
+                                style: const TextStyle(color: kTextPrimary)),
+                            trailing: sent
+                                ? const Icon(Icons.check_circle, color: Color(0xFF34C759))
+                                : ElevatedButton(
+                                    onPressed: () => _invite(user),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: kNeonYellow,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    ),
+                                    child: const Text('Invite', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Original Firebase Challenges Tab ─────────────────────────────────────────
 
 class _ChallengesTab extends ConsumerStatefulWidget {
@@ -739,68 +904,41 @@ class _ChallengesTab extends ConsumerStatefulWidget {
 
 class _ChallengesTabState extends ConsumerState<_ChallengesTab> {
   bool _autoSynced = false;
+  late final Stream<List<SlayChallenge>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = FirebaseService.myChallengesStream();
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Keep stream alive for auto-sync; active challenges are shown in My Progress
     return StreamBuilder<List<SlayChallenge>>(
-      stream: FirebaseService.myChallengesStream(),
+      stream: _stream,
       builder: (context, snap) {
         final challenges = snap.data ?? [];
-        // Auto-sync all scores once when challenges first load
         if (!_autoSynced && challenges.isNotEmpty) {
           _autoSynced = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            for (final c in challenges) {
-              _syncScore(c);
-            }
+            for (final c in challenges) { _syncScore(c); }
           });
         }
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
           children: [
-            // Action buttons
             Row(
               children: [
-                Expanded(
-                  child: _ActionButton(
-                    icon: Icons.add,
-                    label: 'Create Challenge',
-                    onTap: () => _showCreateSheet(context),
-                  ),
-                ),
+                Expanded(child: _ActionButton(icon: Icons.add, label: 'Create Challenge', onTap: () => _showCreateSheet(context))),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: _ActionButton(
-                    icon: Icons.group_add,
-                    label: 'Join with Code',
-                    onTap: () => _showJoinDialog(context),
-                    secondary: true,
-                  ),
-                ),
+                Expanded(child: _ActionButton(icon: Icons.group_add, label: 'Join with Code', onTap: () => _showJoinDialog(context), secondary: true)),
               ],
             ),
             const SizedBox(height: 20),
-            if (challenges.isNotEmpty) ...[
-              Text('Your Active Challenges (${challenges.length})',
-                  style: const TextStyle(
-                      color: kTextPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16)),
-              const SizedBox(height: 12),
-              ...challenges.map((c) => _ChallengeCard(
-                    challenge: c,
-                    ref: ref,
-                    onSync: () => _syncScore(c),
-                    onInviteUser: () => _showInviteUserDialog(context, c),
-                  )),
-              const SizedBox(height: 8),
-            ],
-            // ── Challenge Catalog ──────────────────────────────────────────
-            const Divider(color: Color(0xFF2A3550)),
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Challenge Catalog',
-                  style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text('Challenge Catalog', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
             ),
             ..._buildCatalog(ref),
           ],
@@ -889,6 +1027,7 @@ class _ChallengesTabState extends ConsumerState<_ChallengesTab> {
                     GestureDetector(
                       onTap: () {
                         ref.read(challengesProvider.notifier).joinChallenge(def.id);
+                        FirebaseService.createChallengeFromDefinition(def);
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text('Challenge accepted: ${def.name}'),
                           backgroundColor: color,
@@ -2104,12 +2243,12 @@ class _NotificationsTab extends StatelessWidget {
   }
 }
 
-class _NotifCard extends StatelessWidget {
+class _NotifCard extends ConsumerWidget {
   final AppNotification notif;
   const _NotifCard({required this.notif});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isInvite = notif.type == 'challenge_invite';
     final color = isInvite ? const Color(0xFF007AFF) : const Color(0xFF34C759);
 
@@ -2152,6 +2291,10 @@ class _NotifCard extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () async {
+                        // Join the catalog challenge locally if definitionId is present
+                        if (notif.definitionId != null) {
+                          ref.read(challengesProvider.notifier).joinChallenge(notif.definitionId!);
+                        }
                         await FirebaseService.acceptChallengeInvite(notif);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(

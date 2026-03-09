@@ -7,6 +7,7 @@ import 'activity_screen.dart';
 import 'ai_coach_screen.dart';
 import 'community_screen.dart';
 import '../main.dart';
+import '../services/update_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -17,6 +18,37 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  UpdateInfo? _pendingUpdate;
+  bool _downloadingUpdate = false;
+  double _downloadProgress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await UpdateService.checkForUpdate();
+    if (info != null && mounted) {
+      setState(() => _pendingUpdate = info);
+    }
+  }
+
+  Future<void> _startUpdate() async {
+    if (_pendingUpdate == null) return;
+    setState(() {
+      _downloadingUpdate = true;
+      _downloadProgress = 0;
+    });
+    await UpdateService.downloadAndInstall(
+      _pendingUpdate!.downloadUrl,
+      onProgress: (p) {
+        if (mounted) setState(() => _downloadProgress = p);
+      },
+    );
+    if (mounted) setState(() => _downloadingUpdate = false);
+  }
 
   static const _screens = [
     DashboardScreen(),
@@ -45,9 +77,23 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
+      body: Column(
+        children: [
+          if (_pendingUpdate != null)
+            _UpdateBanner(
+              version: _pendingUpdate!.version,
+              downloading: _downloadingUpdate,
+              progress: _downloadProgress,
+              onTap: _startUpdate,
+              onDismiss: () => setState(() => _pendingUpdate = null),
+            ),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: _screens,
+            ),
+          ),
+        ],
       ),
       floatingActionButton: _selectedIndex == 4 ? null : _GlowingCoachFab(onTap: _openCoach),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -132,6 +178,99 @@ class _GlowingCoachFabState extends State<_GlowingCoachFab>
           child: child,
         ),
         child: const Icon(Icons.bolt, color: Colors.black, size: 34),
+      ),
+    );
+  }
+}
+
+class _UpdateBanner extends StatelessWidget {
+  final String version;
+  final bool downloading;
+  final double progress;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  const _UpdateBanner({
+    required this.version,
+    required this.downloading,
+    required this.progress,
+    required this.onTap,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        width: double.infinity,
+        color: kNeonYellow,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: downloading
+            ? Row(
+                children: [
+                  const Icon(Icons.download, color: Colors.black, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Downloading update… ${(progress * 100).toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: Colors.black26,
+                          valueColor:
+                              const AlwaysStoppedAnimation<Color>(Colors.black),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  const Icon(Icons.system_update, color: Colors.black, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Update available — v$version',
+                      style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: onTap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('Install',
+                          style: TextStyle(
+                              color: kNeonYellow,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: onDismiss,
+                    child: const Icon(Icons.close, color: Colors.black, size: 18),
+                  ),
+                ],
+              ),
       ),
     );
   }

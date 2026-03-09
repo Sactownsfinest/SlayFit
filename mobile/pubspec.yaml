@@ -74,6 +74,10 @@ dependencies:
   # URL launching (Instacart links, etc.)
   url_launcher: ^6.3.0
 
+  # In-app update checker
+  package_info_plus: ^8.0.0
+  open_file: ^3.3.2
+
   # Firebase (community challenges, real-time chat, social)
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1

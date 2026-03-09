@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/challenge_definitions.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,7 @@ class AppNotification {
   final String fromName;
   final String? challengeName;
   final String? joinCode;
+  final String? definitionId;
   final bool read;
   final DateTime createdAt;
 
@@ -157,6 +159,7 @@ class AppNotification {
     required this.fromName,
     this.challengeName,
     this.joinCode,
+    this.definitionId,
     required this.read,
     required this.createdAt,
   });
@@ -169,6 +172,7 @@ class AppNotification {
         fromName: d['fromName'] as String? ?? 'Someone',
         challengeName: d['challengeName'] as String?,
         joinCode: d['joinCode'] as String?,
+        definitionId: d['definitionId'] as String?,
         read: d['read'] as bool? ?? false,
         createdAt: d['createdAt'] is Timestamp
             ? (d['createdAt'] as Timestamp).toDate()
@@ -216,25 +220,96 @@ class FirebaseService {
 
   static Future<String> getDisplayName() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_displayNameKey) ?? 'SlayFit User';
+    final community = prefs.getString(_displayNameKey);
+    if (community != null && community.isNotEmpty && community != 'SlayFit User') {
+      return community;
+    }
+    // Fall back to the profile name set during onboarding
+    final profileName = prefs.getString('user_name');
+    if (profileName != null && profileName.isNotEmpty) {
+      return profileName;
+    }
+    return 'SlayFit User';
   }
 
   static Future<void> setDisplayName(String name) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_displayNameKey, name);
-    // Update all challenges this user is in
     if (uid == null) return;
+    // Update users collection so search returns the new name
+    await registerUser(name);
+    // Update all challenges this user is in
     final snap = await _db
         .collection('challenges')
         .where('participantIds', arrayContains: uid)
         .get();
     for (final doc in snap.docs) {
-      await doc.reference
-          .update({'participants.$uid.name': name});
+      await doc.reference.update({'participants.$uid.name': name});
     }
   }
 
   // ── Challenges ─────────────────────────────────────────────────────────────
+
+  static String _fbKeyForDef(String definitionId) => 'challenge_fb_$definitionId';
+
+  /// Creates a Firebase challenge for a catalog challenge definition the first
+  /// time the user joins it.  Idempotent — subsequent calls return the stored ID.
+  static Future<String?> createChallengeFromDefinition(ChallengeDefinition def) async {
+    try {
+      await ensureSignedIn();
+      final prefs = await SharedPreferences.getInstance();
+      final fbKey = _fbKeyForDef(def.id);
+      final existing = prefs.getString(fbKey);
+      if (existing != null) return existing;
+
+      final name = await getDisplayName();
+      final now = DateTime.now();
+      final code = _randomCode();
+      final ref = _db.collection('challenges').doc();
+      await ref.set({
+        'title': def.name,
+        'type': ChallengeType.streak.name,
+        'durationDays': def.durationDays,
+        'startDate': Timestamp.fromDate(now),
+        'endDate': Timestamp.fromDate(now.add(Duration(days: def.durationDays))),
+        'createdBy': uid,
+        'creatorName': name,
+        'joinCode': code,
+        'definitionId': def.id,
+        'participantIds': [uid],
+        'participants': {
+          uid!: {'name': name, 'score': 0.0},
+        },
+      });
+      await prefs.setString(fbKey, ref.id);
+      return ref.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Updates the user's score on the Firebase challenge tied to a catalog def.
+  static Future<void> syncCatalogChallengeScore(String definitionId, double score) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fbId = prefs.getString(_fbKeyForDef(definitionId));
+      if (fbId == null || uid == null) return;
+      await updateMyScore(fbId, score);
+    } catch (_) {}
+  }
+
+  /// Returns the join code for the Firebase challenge tied to a catalog def, or null.
+  static Future<String?> getCatalogChallengeCode(String definitionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fbId = prefs.getString(_fbKeyForDef(definitionId));
+      if (fbId == null) return null;
+      final doc = await _db.collection('challenges').doc(fbId).get();
+      return doc.data()?['joinCode'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static String _randomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -471,6 +546,48 @@ class FirebaseService {
       'read': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Send a catalog challenge invite directly to a user by UID.
+  /// Creates the Firebase challenge doc if not yet created, then sends notification.
+  static Future<void> sendCatalogChallengeInvite({
+    required String toUid,
+    required ChallengeDefinition def,
+  }) async {
+    if (uid == null) return;
+    final fbId = await createChallengeFromDefinition(def);
+    final code = fbId != null ? await getCatalogChallengeCode(def.id) : null;
+    final myName = await getDisplayName();
+    await _db
+        .collection('users')
+        .doc(toUid)
+        .collection('notifications')
+        .add({
+      'type': 'challenge_invite',
+      'fromUid': uid,
+      'fromName': myName,
+      'challengeName': def.name,
+      'definitionId': def.id,
+      'joinCode': code,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Returns all registered users except self (for invite list).
+  static Future<List<Map<String, String>>> getAllUsers() async {
+    final snap = await _db
+        .collection('users')
+        .orderBy('displayName')
+        .limit(50)
+        .get();
+    return snap.docs
+        .where((d) => d.id != uid)
+        .map((d) => {
+              'uid': d.data()['uid'] as String? ?? d.id,
+              'displayName': d.data()['displayName'] as String? ?? 'Unknown',
+            })
+        .toList();
   }
 
   /// Accept a challenge invite — joins the challenge and notifies the sender.

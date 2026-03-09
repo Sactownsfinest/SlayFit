@@ -13,6 +13,7 @@ import '../services/notification_service.dart';
 import '../providers/health_provider.dart';
 import '../providers/measurements_provider.dart';
 import '../providers/challenges_provider.dart';
+import '../services/firebase_service.dart';
 
 String _fmtWeight(double kg, bool metric) =>
     metric ? '${kg.toStringAsFixed(1)} kg' : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
@@ -333,6 +334,12 @@ class ProfileScreen extends ConsumerWidget {
               _SectionHeader('MEASUREMENTS'),
               const SizedBox(height: 8),
               _MeasurementsSummaryCard(),
+              const SizedBox(height: 20),
+
+              // Community
+              _SectionHeader('COMMUNITY'),
+              const SizedBox(height: 8),
+              const _CommunityCard(),
               const SizedBox(height: 20),
 
               // Fitbit
@@ -1196,6 +1203,80 @@ class _MeasureField extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Community Display Name Card ───────────────────────────────────────────────
+
+class _CommunityCard extends ConsumerStatefulWidget {
+  const _CommunityCard();
+  @override
+  ConsumerState<_CommunityCard> createState() => _CommunityCardState();
+}
+
+class _CommunityCardState extends ConsumerState<_CommunityCard> {
+  String _displayName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final name = await FirebaseService.getDisplayName();
+    if (mounted) setState(() => _displayName = name);
+  }
+
+  void _editName(BuildContext context) {
+    final ctrl = TextEditingController(text: _displayName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Community Display Name',
+            style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: kTextPrimary),
+          decoration: const InputDecoration(
+            hintText: 'Enter your display name',
+            hintStyle: TextStyle(color: kTextSecondary),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.isNotEmpty) {
+                await FirebaseService.setDisplayName(name);
+                if (mounted) setState(() => _displayName = name);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(children: [
+      _SettingsRow(
+        icon: Icons.badge_outlined,
+        label: 'Display Name',
+        value: _displayName.isEmpty ? 'Not set' : _displayName,
+        onTap: () => _editName(context),
+      ),
+    ]);
   }
 }
 
