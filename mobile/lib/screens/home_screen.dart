@@ -47,7 +47,12 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) setState(() => _downloadProgress = p);
       },
     );
-    if (mounted) setState(() => _downloadingUpdate = false);
+    if (mounted) {
+      setState(() {
+        _downloadingUpdate = false;
+        _pendingUpdate = null;
+      });
+    }
   }
 
   static const _screens = [

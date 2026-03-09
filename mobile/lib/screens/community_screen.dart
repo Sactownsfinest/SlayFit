@@ -36,7 +36,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 4, vsync: this);
     _tab.addListener(() => setState(() {}));
     _init();
   }
@@ -73,9 +73,38 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
         ),
         actions: [
           if (_initialized)
-            IconButton(
-              icon: const Icon(Icons.person_outline, color: kTextSecondary),
-              onPressed: () => _showNameDialog(),
+            StreamBuilder<List<AppNotification>>(
+              stream: FirebaseService.myNotificationsStream(),
+              builder: (_, snap) {
+                final unread = (snap.data ?? []).where((n) => !n.read).length;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications_outlined, color: kTextSecondary),
+                      onPressed: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: kSurfaceDark,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        builder: (_) => const _NotificationsPanel(),
+                      ),
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          width: 16, height: 16,
+                          decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                          child: Center(child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
         ],
         bottom: TabBar(
@@ -86,32 +115,11 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
           labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: [
-            const Tab(text: 'Challenges'),
-            const Tab(text: 'My Progress'),
-            const Tab(text: 'Leaderboard'),
-            const Tab(text: 'Chat'),
-            Tab(
-              child: StreamBuilder<List<AppNotification>>(
-                stream: FirebaseService.myNotificationsStream(),
-                builder: (_, snap) {
-                  final unread = (snap.data ?? []).where((n) => !n.read).length;
-                  return Stack(clipBehavior: Clip.none, children: [
-                    const Text('Alerts'),
-                    if (unread > 0)
-                      Positioned(
-                        right: -10,
-                        top: -4,
-                        child: Container(
-                          width: 16, height: 16,
-                          decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                          child: Center(child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))),
-                        ),
-                      ),
-                  ]);
-                },
-              ),
-            ),
+          tabs: const [
+            Tab(text: 'Challenges'),
+            Tab(text: 'My Progress'),
+            Tab(text: 'Leaderboard'),
+            Tab(text: 'Chat'),
           ],
         ),
       ),
@@ -124,7 +132,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
                 _MyProgressTab(),
                 _LeaderboardTab(),
                 _ChatTab(displayName: _displayName),
-                _NotificationsTab(),
               ],
             ),
     );
@@ -167,45 +174,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
     );
   }
 
-  void _showNameDialog() {
-    final ctrl = TextEditingController(text: _displayName);
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: kCardDark,
-        title: const Text('Your Display Name',
-            style: TextStyle(color: kTextPrimary)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: kTextPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Enter your name',
-            hintStyle: TextStyle(color: kTextSecondary),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel',
-                  style: TextStyle(color: kTextSecondary))),
-          ElevatedButton(
-            onPressed: () async {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) return;
-              Navigator.pop(context);
-              await FirebaseService.setDisplayName(name);
-              if (mounted) setState(() => _displayName = name);
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: kNeonYellow,
-                foregroundColor: Colors.black),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Challenge catalog helpers ─────────────────────────────────────────────────
@@ -1425,7 +1393,7 @@ class _ChallengeCard extends StatelessWidget {
                 onTap: () => Share.share(
                   'Join my "${challenge.title}" challenge on SlayFit! 💪\n\n'
                   'Use code: ${challenge.joinCode}\n\n'
-                  'Download SlayFit: https://github.com/Sactownsfinest/SlayFit/releases/tag/Slayfit',
+                  'Download SlayFit: https://github.com/Sactownsfinest/SlayFit/releases/tag/v1.0.1',
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2207,38 +2175,66 @@ class _ActionButton extends StatelessWidget {
 
 // ── Notifications Tab ─────────────────────────────────────────────────────────
 
-class _NotificationsTab extends StatelessWidget {
-  const _NotificationsTab();
+class _NotificationsPanel extends StatelessWidget {
+  const _NotificationsPanel();
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<AppNotification>>(
-      stream: FirebaseService.myNotificationsStream(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: kNeonYellow));
-        }
-        final notifs = snap.data ?? [];
-        if (notifs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.92,
+      builder: (_, controller) => Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 40, height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
               children: [
-                Icon(Icons.notifications_none, color: kTextSecondary, size: 48),
-                SizedBox(height: 16),
-                Text('No notifications yet', style: TextStyle(color: kTextPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                SizedBox(height: 8),
-                Text('Challenge invites and acceptances\nwill appear here.', textAlign: TextAlign.center, style: TextStyle(color: kTextSecondary)),
+                Icon(Icons.notifications_outlined, color: kNeonYellow, size: 20),
+                SizedBox(width: 8),
+                Text('Notifications', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-          itemCount: notifs.length,
-          itemBuilder: (_, i) => _NotifCard(notif: notifs[i]),
-        );
-      },
+          ),
+          Expanded(
+            child: StreamBuilder<List<AppNotification>>(
+              stream: FirebaseService.myNotificationsStream(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: kNeonYellow));
+                }
+                final notifs = snap.data ?? [];
+                if (notifs.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.notifications_none, color: kTextSecondary, size: 48),
+                        SizedBox(height: 16),
+                        Text('No notifications yet', style: TextStyle(color: kTextPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                        SizedBox(height: 8),
+                        Text('Challenge invites and updates\nwill appear here.', textAlign: TextAlign.center, style: TextStyle(color: kTextSecondary)),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  itemCount: notifs.length,
+                  itemBuilder: (_, i) => _NotifCard(notif: notifs[i]),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
