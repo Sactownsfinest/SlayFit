@@ -211,6 +211,9 @@ class _CalorieRingCard extends StatelessWidget {
     final statusLabel = isDeficit ? 'deficit' : deficit == 0 ? 'on track' : 'surplus';
     final statusColor = isDeficit ? const Color(0xFF4ADE80) : const Color(0xFFF87171);
 
+    const green = Color(0xFF4ADE80);
+    final glowColor = isDeficit ? green : kNeonYellow;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -222,9 +225,9 @@ class _CalorieRingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: kNeonYellow.withValues(alpha: 0.07),
-            blurRadius: 24,
-            spreadRadius: 3,
+            color: glowColor.withValues(alpha: isDeficit ? 0.18 : 0.07),
+            blurRadius: 28,
+            spreadRadius: isDeficit ? 5 : 3,
           ),
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.55),
@@ -233,7 +236,7 @@ class _CalorieRingCard extends StatelessWidget {
           ),
         ],
         border: Border.all(
-          color: kNeonYellow.withValues(alpha: 0.08),
+          color: glowColor.withValues(alpha: isDeficit ? 0.25 : 0.08),
           width: 1,
         ),
       ),
@@ -257,6 +260,7 @@ class _CalorieRingCard extends StatelessWidget {
                     eaten: eaten,
                     burned: burned,
                     goal: goal,
+                    isDeficit: isDeficit,
                   ),
                 ),
                 Column(
@@ -291,7 +295,7 @@ class _CalorieRingCard extends StatelessWidget {
               _RingStat(
                 label: 'Eaten',
                 value: eaten.toInt().toString(),
-                color: const Color(0xFFF87171),
+                color: isDeficit ? const Color(0xFF4ADE80) : const Color(0xFFF87171),
                 dot: true,
               ),
               _RingStat(
@@ -318,11 +322,13 @@ class _DualCalorieRingPainter extends CustomPainter {
   final double eaten;
   final double burned;
   final double goal;
+  final bool isDeficit;
 
   const _DualCalorieRingPainter({
     required this.eaten,
     required this.burned,
     required this.goal,
+    this.isDeficit = false,
   });
 
   @override
@@ -349,11 +355,11 @@ class _DualCalorieRingPainter extends CustomPainter {
           const Color(0xFF4ADE80), strokeWidth);
     }
 
-    // Eaten arc — red LED, clockwise from top
+    // Eaten arc — red (or green on deficit), clockwise from top
+    final eatenColor = isDeficit ? const Color(0xFF4ADE80) : const Color(0xFFF87171);
     final eatenSweep = (eaten / goal).clamp(0.0, 1.0) * 2 * math.pi;
     if (eatenSweep > 0) {
-      _drawLedArc(canvas, rect, -math.pi / 2, eatenSweep,
-          const Color(0xFFF87171), strokeWidth);
+      _drawLedArc(canvas, rect, -math.pi / 2, eatenSweep, eatenColor, strokeWidth);
     }
   }
 
@@ -398,7 +404,7 @@ class _DualCalorieRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DualCalorieRingPainter old) =>
-      old.eaten != eaten || old.burned != burned || old.goal != goal;
+      old.eaten != eaten || old.burned != burned || old.goal != goal || old.isDeficit != isDeficit;
 }
 
 class _RingStat extends StatelessWidget {

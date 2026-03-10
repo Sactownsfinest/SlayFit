@@ -52,6 +52,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _downloadingUpdate = false;
         _pendingUpdate = null;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tap Install in the system prompt to finish updating.'),
+          duration: Duration(seconds: 6),
+          backgroundColor: Color(0xFF1A2235),
+        ),
+      );
     }
   }
 
