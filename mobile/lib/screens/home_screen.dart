@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dashboard_screen.dart';
 import 'profile_screen.dart';
 import 'food_log_screen.dart';
@@ -30,36 +31,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _checkForUpdate() async {
     final info = await UpdateService.checkForUpdate();
-    if (info != null && mounted) {
-      setState(() => _pendingUpdate = info);
-    }
+    if (info == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final skipped = prefs.getString('skipped_update_version') ?? '';
+    if (skipped == info.version) return; // user already dismissed this version
+    setState(() => _pendingUpdate = info);
+  }
+
+  Future<void> _dismissUpdate(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('skipped_update_version', version);
+    if (mounted) setState(() => _pendingUpdate = null);
   }
 
   Future<void> _startUpdate() async {
     if (_pendingUpdate == null) return;
-    setState(() {
-      _downloadingUpdate = true;
-      _downloadProgress = 0;
-    });
+    setState(() { _downloadingUpdate = true; _downloadProgress = 0; });
+    final version = _pendingUpdate!.version;
     await UpdateService.downloadAndInstall(
       _pendingUpdate!.downloadUrl,
-      onProgress: (p) {
-        if (mounted) setState(() => _downloadProgress = p);
-      },
+      onProgress: (p) { if (mounted) setState(() => _downloadProgress = p); },
     );
-    if (mounted) {
-      setState(() {
-        _downloadingUpdate = false;
-        _pendingUpdate = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tap Install in the system prompt to finish updating.'),
-          duration: Duration(seconds: 6),
-          backgroundColor: Color(0xFF1A2235),
-        ),
-      );
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('skipped_update_version', version);
+    if (mounted) setState(() { _downloadingUpdate = false; _pendingUpdate = null; });
   }
 
   static const _screens = [
@@ -97,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
               downloading: _downloadingUpdate,
               progress: _downloadProgress,
               onTap: _startUpdate,
-              onDismiss: () => setState(() => _pendingUpdate = null),
+              onDismiss: () => _dismissUpdate(_pendingUpdate!.version),
             ),
           Expanded(
             child: IndexedStack(
@@ -219,70 +214,50 @@ class _UpdateBanner extends StatelessWidget {
         color: kNeonYellow,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: downloading
-            ? Row(
-                children: [
-                  const Icon(Icons.download, color: Colors.black, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Downloading update… ${(progress * 100).toStringAsFixed(0)}%',
-                          style: const TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor: Colors.black26,
-                          valueColor:
-                              const AlwaysStoppedAnimation<Color>(Colors.black),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              )
-            : Row(
-                children: [
-                  const Icon(Icons.system_update, color: Colors.black, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Update available — v$version',
-                      style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: onTap,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(12),
+            ? Row(children: [
+                const Icon(Icons.download, color: Colors.black, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Downloading update… ${(progress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12),
                       ),
-                      child: const Text('Install',
-                          style: TextStyle(
-                              color: kNeonYellow,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12)),
-                    ),
+                      const SizedBox(height: 4),
+                      LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.black26,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.black),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: onDismiss,
-                    child: const Icon(Icons.close, color: Colors.black, size: 18),
+                ),
+              ])
+            : Row(children: [
+                const Icon(Icons.system_update, color: Colors.black, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Update available — v$version',
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+                GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12)),
+                    child: const Text('Install',
+                        style: TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onDismiss,
+                  child: const Icon(Icons.close, color: Colors.black, size: 18),
+                ),
+              ]),
       ),
     );
   }
