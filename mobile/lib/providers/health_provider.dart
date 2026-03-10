@@ -104,6 +104,7 @@ class HealthNotifier extends StateNotifier<HealthState>
         final token = await _fitbit.getValidAccessToken();
         if (token != null) {
           await fetchData();
+          _backfillActivityHistory(7); // fire-and-forget: fill past 7 days
         }
         // If token is null, polling will retry — don't show error with cached data
       } catch (_) {
@@ -266,6 +267,26 @@ class HealthNotifier extends StateNotifier<HealthState>
     final day = _todayDateStr();
     if (steps != null) await prefs.setInt('steps_log_$day', steps);
     if (burned != null) await prefs.setInt('burned_log_$day', burned);
+  }
+
+  // Backfill past [days] days from Fitbit — only fills missing keys
+  Future<void> _backfillActivityHistory(int days) async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    for (int i = 1; i <= days; i++) {
+      final date = now.subtract(Duration(days: i));
+      final key = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      if (prefs.containsKey('steps_log_$key')) continue;
+      try {
+        final summary = await _fitbit.fetchActivitySummaryForDate(key);
+        if (summary != null) {
+          final s = summary['steps'] as int?;
+          final b = summary['activityCalories'] as int?;
+          if (s != null && s > 0) await prefs.setInt('steps_log_$key', s);
+          if (b != null && b > 0) await prefs.setInt('burned_log_$key', b);
+        }
+      } catch (_) {}
+    }
   }
 
   // ── Google Fit ────────────────────────────────────────────────────────────

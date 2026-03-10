@@ -28,12 +28,26 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     super.dispose();
   }
 
+  static const _testPhone = '+15555555555';
+  static const _testOtp = '123456';
+
   Future<void> _sendCode() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) {
+    String raw = _phoneController.text.trim();
+    if (raw.isEmpty) {
       _showError('Please enter your phone number');
       return;
     }
+    // Strip spaces, dashes, and parentheses for parsing
+    final digits = raw.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    // Auto-prepend +1 for US numbers if no country code given
+    final phone = digits.startsWith('+') ? digits : '+1$digits';
+
+    // Test account bypass for Google Play review
+    if (phone == _testPhone) {
+      setState(() { _codeSent = true; _isLoading = false; });
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     await FirebaseAuth.instance.verifyPhoneNumber(
@@ -46,7 +60,15 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
       verificationFailed: (FirebaseAuthException e) {
         if (!mounted) return;
         setState(() => _isLoading = false);
-        _showError(e.message ?? 'Verification failed');
+        String msg;
+        if (e.code == 'billing-not-enabled') {
+          msg = 'Phone sign-in is currently unavailable. Please use Google Sign-In instead.';
+        } else if (e.code == 'invalid-phone-number') {
+          msg = 'Invalid phone number. Please enter a valid US number.';
+        } else {
+          msg = e.message ?? 'Verification failed. Please try again.';
+        }
+        _showError(msg);
       },
       codeSent: (String verificationId, int? resendToken) {
         if (!mounted) return;
@@ -64,8 +86,32 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
   Future<void> _verifyCode() async {
     final otp = _otpController.text.trim();
-    if (otp.isEmpty || _verificationId == null) return;
+    if (otp.isEmpty) return;
     setState(() => _isLoading = true);
+
+    // Test account bypass for Google Play review
+    final phone = _phoneController.text.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    final normalizedPhone = phone.startsWith('+') ? phone : '+1$phone';
+    if (normalizedPhone == _testPhone && otp == _testOtp) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_email', _testPhone);
+      await prefs.setBool('is_logged_in', true);
+      final existing = prefs.getString('user_name') ?? '';
+      if (existing.isEmpty) await prefs.setString('user_name', 'Test User');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ref.read(authProvider.notifier).completeOnboarding();
+      final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
+      if (onboardingDone) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (route) => false,
+        );
+      }
+      return;
+    }
+
+    if (_verificationId == null) return;
     final credential = PhoneAuthProvider.credential(
       verificationId: _verificationId!,
       smsCode: otp,

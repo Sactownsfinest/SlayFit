@@ -1,12 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/food_provider.dart';
+import '../providers/meal_plan_provider.dart';
 import '../providers/recipe_provider.dart';
+import '../providers/user_provider.dart';
+import '../services/claude_service.dart';
 import '../main.dart';
 import 'grocery_list_screen.dart';
 
@@ -24,7 +31,7 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -44,11 +51,6 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
           snap: true,
           title: const Text('Food'),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.shopping_cart_outlined, color: kNeonYellow),
-              tooltip: 'Meal Plan & Grocery List',
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroceryListScreen())),
-            ),
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined, color: kNeonYellow),
               tooltip: 'Scan your plate',
@@ -86,6 +88,7 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
               Tab(text: 'Log'),
               Tab(text: 'Favorites'),
               Tab(text: 'Recipes'),
+              Tab(text: 'Meal Plan'),
             ],
           ),
         ),
@@ -96,6 +99,7 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
           _FoodLogTab(food: food),
           const _FavoritesTab(),
           const _RecipesTab(),
+          const _MealPlanTab(),
         ],
       ),
     );
@@ -3048,6 +3052,507 @@ class _MacroStat extends StatelessWidget {
             style:
                 const TextStyle(color: kTextSecondary, fontSize: 11)),
       ],
+    );
+  }
+}
+
+// ── Meal Plan Tab ─────────────────────────────────────────────────────────────
+
+class _MealPlanTab extends ConsumerStatefulWidget {
+  const _MealPlanTab();
+
+  @override
+  ConsumerState<_MealPlanTab> createState() => _MealPlanTabState();
+}
+
+class _MealPlanTabState extends ConsumerState<_MealPlanTab> {
+  final _editCtrl = TextEditingController();
+
+  static const _categoryOrder = ['Produce', 'Protein', 'Dairy', 'Grains', 'Pantry', 'Other'];
+  static const _categoryIcons = {
+    'Produce': Icons.eco_outlined,
+    'Protein': Icons.set_meal_outlined,
+    'Dairy': Icons.local_drink_outlined,
+    'Grains': Icons.grain,
+    'Pantry': Icons.kitchen_outlined,
+    'Other': Icons.shopping_basket_outlined,
+  };
+
+  @override
+  void dispose() {
+    _editCtrl.dispose();
+    super.dispose();
+  }
+
+  void _generate() {
+    final p = ref.read(userProfileProvider);
+    ref.read(mealPlanProvider.notifier).generatePlan(
+      calorieGoal: p.dailyCalorieGoal,
+      proteinG: p.proteinGoalG,
+      carbsG: p.carbsGoalG,
+      fatG: p.fatGoalG,
+      name: p.name.split(' ').first,
+    );
+  }
+
+  void _generateGroceries() {
+    final p = ref.read(userProfileProvider);
+    ref.read(mealPlanProvider.notifier).generateGroceries(
+      calorieGoal: p.dailyCalorieGoal,
+      proteinG: p.proteinGoalG,
+      carbsG: p.carbsGoalG,
+      fatG: p.fatGoalG,
+      name: p.name.split(' ').first,
+    );
+  }
+
+  void _showEditDialog() {
+    _editCtrl.clear();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceDark,
+        title: const Text('Edit Meal Plan', style: TextStyle(color: kTextPrimary)),
+        content: TextField(
+          controller: _editCtrl,
+          autofocus: true,
+          style: const TextStyle(color: kTextPrimary),
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'e.g. "Make it vegetarian" or "More protein on Day 3"',
+            hintStyle: TextStyle(color: kTextSecondary, fontSize: 13),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              final req = _editCtrl.text.trim();
+              if (req.isEmpty) return;
+              Navigator.pop(ctx);
+              final p = ref.read(userProfileProvider);
+              ref.read(mealPlanProvider.notifier).editPlan(
+                editRequest: req,
+                calorieGoal: p.dailyCalorieGoal,
+                proteinG: p.proteinGoalG,
+                carbsG: p.carbsGoalG,
+                fatG: p.fatGoalG,
+                name: p.name.split(' ').first,
+              );
+            },
+            child: const Text('Update', style: TextStyle(color: kNeonYellow)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _mealColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'breakfast': return const Color(0xFFFF9500);
+      case 'lunch':     return const Color(0xFF34C759);
+      case 'dinner':    return const Color(0xFF007AFF);
+      default:          return const Color(0xFFBF5AF2);
+    }
+  }
+
+  String _buildShareText(MealPlanState plan) {
+    final buf = StringBuffer('🛒 SlayFit Grocery List\n\n');
+    final grouped = <String, List<GroceryItem>>{};
+    for (final g in plan.groceries) {
+      final cat = _categoryOrder.contains(g.category) ? g.category : 'Other';
+      grouped.putIfAbsent(cat, () => []).add(g);
+    }
+    for (final cat in _categoryOrder) {
+      final items = grouped[cat];
+      if (items == null || items.isEmpty) continue;
+      buf.writeln('── $cat ──');
+      for (final item in items) {
+        buf.writeln('• ${item.name}${item.qty.isNotEmpty ? "  (${item.qty})" : ""}');
+      }
+      buf.writeln();
+    }
+    return buf.toString().trim();
+  }
+
+  Future<void> _openInstacart(String itemName) async {
+    final encoded = Uri.encodeComponent(itemName);
+    final uri = Uri.parse('https://www.instacart.com/store/s?k=$encoded');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open Instacart')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = ref.watch(mealPlanProvider);
+
+    if (plan.isGeneratingPlan || plan.isGeneratingGroceries) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: kNeonYellow),
+            const SizedBox(height: 20),
+            Text(
+              plan.isGeneratingPlan ? 'Building your meal plan…' : 'Generating grocery list…',
+              style: const TextStyle(color: kTextSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'This takes about 30 seconds',
+              style: TextStyle(color: kTextSecondary, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!plan.hasPlan) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80, height: 80,
+                decoration: BoxDecoration(
+                  color: kNeonYellow.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.restaurant_menu, color: kNeonYellow, size: 36),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                '7-Day Meal Plan',
+                style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 22),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Generate a personalised 7-day meal plan and grocery list tailored to your calorie and macro goals.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: kTextSecondary, fontSize: 14, height: 1.5),
+              ),
+              if (plan.error != null) ...[
+                const SizedBox(height: 16),
+                Text(plan.error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+              ],
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _generate,
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Generate Meal Plan',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kNeonYellow,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Plan exists — build full content
+    final grouped = <String, List<GroceryItem>>{};
+    for (final g in plan.groceries) {
+      final cat = _categoryOrder.contains(g.category) ? g.category : 'Other';
+      grouped.putIfAbsent(cat, () => []).add(g);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      children: [
+        // Action row
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _generate,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Regenerate'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kTextSecondary,
+                  side: const BorderSide(color: Color(0xFF2A3550)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showEditDialog,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit Plan'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kNeonYellow,
+                  side: const BorderSide(color: kNeonYellow),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            if (plan.hasGroceries) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: () => Share.share(_buildShareText(plan), subject: 'SlayFit Grocery List'),
+                icon: const Icon(Icons.share_outlined, color: kTextSecondary, size: 20),
+                tooltip: 'Share grocery list',
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // 7-Day Meal Plan header
+        const Row(children: [
+          Icon(Icons.restaurant_menu, color: kNeonYellow, size: 16),
+          SizedBox(width: 6),
+          Text('7-Day Meal Plan',
+              style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+        ]),
+        const SizedBox(height: 10),
+
+        // Day cards
+        ...plan.days.asMap().entries.map((entry) {
+          final dayIdx = entry.key;
+          final day = entry.value;
+          final allChecked = day.meals.every((m) => m.checked);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: kCardDark,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: allChecked ? kNeonYellow.withValues(alpha: 0.4) : const Color(0xFF2A3550),
+              ),
+            ),
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                leading: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: allChecked
+                        ? kNeonYellow.withValues(alpha: 0.15)
+                        : const Color(0xFF1E2D45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: allChecked
+                        ? const Icon(Icons.check, color: kNeonYellow, size: 16)
+                        : Text('${day.day}',
+                            style: const TextStyle(
+                                color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                ),
+                title: Text(
+                  'Day ${day.day}',
+                  style: TextStyle(
+                    color: allChecked ? kNeonYellow : kTextPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    decoration: allChecked ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                subtitle: Text(
+                  day.meals.map((m) => m.mealType).join(' · '),
+                  style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                ),
+                iconColor: kTextSecondary,
+                collapsedIconColor: kTextSecondary,
+                children: day.meals.asMap().entries.map((mEntry) {
+                  final mealIdx = mEntry.key;
+                  final meal = mEntry.value;
+                  final mc = _mealColor(meal.mealType);
+                  return CheckboxListTile(
+                    value: meal.checked,
+                    onChanged: (v) => ref
+                        .read(mealPlanProvider.notifier)
+                        .toggleMealCheck(dayIdx, mealIdx, v ?? false),
+                    activeColor: kNeonYellow,
+                    checkColor: Colors.black,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    dense: true,
+                    title: Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: mc.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(meal.mealType,
+                            style: TextStyle(
+                                color: mc, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          meal.description,
+                          style: TextStyle(
+                            color: meal.checked ? kTextSecondary : kTextPrimary,
+                            fontSize: 12,
+                            decoration: meal.checked ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                      ),
+                    ]),
+                  );
+                }).toList(),
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+
+        // Grocery list
+        if (plan.hasGroceries) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00892E).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF00892E).withValues(alpha: 0.3)),
+            ),
+            child: const Row(children: [
+              Icon(Icons.shopping_basket, color: Color(0xFF00892E), size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Tap  🔍  on any item to search it on Instacart',
+                  style: TextStyle(color: kTextSecondary, fontSize: 12),
+                ),
+              ),
+            ]),
+          ),
+          const Row(children: [
+            Icon(Icons.shopping_cart_outlined, color: kNeonYellow, size: 16),
+            SizedBox(width: 6),
+            Text('Grocery List',
+                style: TextStyle(
+                    color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
+          ]),
+          const SizedBox(height: 10),
+          for (final cat in _categoryOrder)
+            if (grouped.containsKey(cat)) ...[
+              _MpCategoryHeader(cat, _categoryIcons[cat] ?? Icons.shopping_basket_outlined),
+              ...grouped[cat]!.map((item) => _MpGroceryTile(
+                    item: item,
+                    onChanged: (v) => ref
+                        .read(mealPlanProvider.notifier)
+                        .toggleGrocery(plan.groceries.indexOf(item), v ?? false),
+                    onInstacart: () => _openInstacart(item.name),
+                  )),
+              const SizedBox(height: 8),
+            ],
+        ] else ...[
+          OutlinedButton.icon(
+            onPressed: _generateGroceries,
+            icon: const Icon(Icons.shopping_cart_outlined, size: 16),
+            label: const Text('Generate Grocery List'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kNeonYellow,
+              side: const BorderSide(color: kNeonYellow),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+
+        if (plan.error != null) ...[
+          const SizedBox(height: 12),
+          Text(plan.error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+        ],
+      ],
+    );
+  }
+}
+
+class _MpCategoryHeader extends StatelessWidget {
+  final String category;
+  final IconData icon;
+  const _MpCategoryHeader(this.category, this.icon);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, top: 4),
+      child: Row(children: [
+        Icon(icon, color: kNeonYellow, size: 15),
+        const SizedBox(width: 7),
+        Text(
+          category.toUpperCase(),
+          style: const TextStyle(
+              color: kNeonYellow, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1.0),
+        ),
+      ]),
+    );
+  }
+}
+
+class _MpGroceryTile extends StatelessWidget {
+  final GroceryItem item;
+  final ValueChanged<bool?> onChanged;
+  final VoidCallback onInstacart;
+  const _MpGroceryTile(
+      {required this.item, required this.onChanged, required this.onInstacart});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2A3550)),
+      ),
+      child: Row(children: [
+        Checkbox(
+          value: item.checked,
+          onChanged: onChanged,
+          activeColor: kNeonYellow,
+          checkColor: Colors.black,
+          side: const BorderSide(color: Color(0xFF4A5568)),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.name,
+                style: TextStyle(
+                  color: item.checked ? kTextSecondary : kTextPrimary,
+                  fontSize: 14,
+                  decoration: item.checked ? TextDecoration.lineThrough : TextDecoration.none,
+                  decorationColor: kTextSecondary,
+                ),
+              ),
+              if (item.qty.isNotEmpty)
+                Text(item.qty, style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+            ],
+          ),
+        ),
+        IconButton(
+          onPressed: onInstacart,
+          icon: const Icon(Icons.search, color: kTextSecondary, size: 20),
+          tooltip: 'Find on Instacart',
+        ),
+      ]),
     );
   }
 }

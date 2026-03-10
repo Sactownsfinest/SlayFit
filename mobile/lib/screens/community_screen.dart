@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:image_picker/image_picker.dart';
 import '../main.dart';
 import '../providers/activity_provider.dart';
 import '../providers/streak_provider.dart';
@@ -36,7 +39,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
+    _tab = TabController(length: 5, vsync: this);
     _tab.addListener(() => setState(() {}));
     _init();
   }
@@ -115,11 +118,12 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
           labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(text: 'Challenges'),
-            Tab(text: 'My Progress'),
-            Tab(text: 'Leaderboard'),
-            Tab(text: 'Chat'),
+          tabs: [
+            const Tab(text: 'Challenges'),
+            const Tab(text: 'My Progress'),
+            const Tab(text: 'Leaderboard'),
+            const Tab(text: 'Chat'),
+            const Tab(text: 'Recipes'),
           ],
         ),
       ),
@@ -132,6 +136,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
                 _MyProgressTab(),
                 _LeaderboardTab(),
                 _ChatTab(displayName: _displayName),
+                _RecipesTab(displayName: _displayName),
               ],
             ),
     );
@@ -402,6 +407,15 @@ class _ActiveChallengeCard extends ConsumerWidget {
             valueLabel: done ? 'Done ✓' : 'Tap below to check in',
             met: done,
           );
+
+        case MetricType.photoChallenge:
+          final done = uc.checkedInToday;
+          return _ReqResult(
+            current: done ? 1.0 : 0.0,
+            target: 1.0,
+            valueLabel: done ? 'Photo submitted ✓' : 'Share a photo to complete',
+            met: done,
+          );
       }
     }).toList();
   }
@@ -420,10 +434,11 @@ class _ActiveChallengeCard extends ConsumerWidget {
     final reqs = _computeReqs(ref);
     final allMet = reqs.every((r) => r.met);
     final isManual = def.requirements.any((r) => r.metric == MetricType.manual);
+    final isPhoto = def.requirements.any((r) => r.metric == MetricType.photoChallenge);
     final checkedIn = uc.checkedInToday;
 
     // Auto check-in when all metric-based requirements are met
-    if (allMet && !isManual && !checkedIn) {
+    if (allMet && !isManual && !isPhoto && !checkedIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(challengesProvider.notifier).checkInToday(def.id);
         final newScore = (uc.completedDates.length + 1).toDouble();
@@ -598,6 +613,34 @@ class _ActiveChallengeCard extends ConsumerWidget {
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
                             fontSize: 12)),
+                  ),
+                ),
+              ),
+
+            // ── Photo challenge submit button ──
+            if (isPhoto && !checkedIn)
+              GestureDetector(
+                onTap: () => _showPhotoSubmitSheet(context, ref, uc, def, color),
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: const Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.camera_alt, color: Colors.black, size: 16),
+                        SizedBox(width: 6),
+                        Text('Share Recipe Photo',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12)),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2334,6 +2377,402 @@ class _NotifCard extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Photo Submit Sheet (Cook 3 Meals challenge) ────────────────────────────────
+
+void _showPhotoSubmitSheet(
+  BuildContext context,
+  WidgetRef ref,
+  UserChallenge uc,
+  ChallengeDefinition def,
+  Color color,
+) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PhotoSubmitSheet(uc: uc, def: def, color: color, wref: ref),
+  );
+}
+
+class _PhotoSubmitSheet extends StatefulWidget {
+  final UserChallenge uc;
+  final ChallengeDefinition def;
+  final Color color;
+  final WidgetRef wref;
+  const _PhotoSubmitSheet({required this.uc, required this.def, required this.color, required this.wref});
+
+  @override
+  State<_PhotoSubmitSheet> createState() => _PhotoSubmitSheetState();
+}
+
+class _PhotoSubmitSheetState extends State<_PhotoSubmitSheet> {
+  XFile? _photo;
+  final _captionCtrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _captionCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 72,
+    );
+    if (picked != null && mounted) setState(() => _photo = picked);
+  }
+
+  Future<void> _submit() async {
+    if (_photo == null) return;
+    setState(() => _submitting = true);
+    try {
+      final bytes = await File(_photo!.path).readAsBytes();
+      final b64 = base64Encode(bytes);
+      await FirebaseService.postRecipe(
+        photoBase64: b64,
+        caption: _captionCtrl.text.trim().isEmpty
+            ? 'Home-cooked meal 👨‍🍳'
+            : _captionCtrl.text.trim(),
+      );
+      widget.wref.read(challengesProvider.notifier).checkInToday(widget.def.id);
+      FirebaseService.syncCatalogChallengeScore(
+          widget.def.id, (widget.uc.completedDates.length + 1).toDouble());
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('👨‍🍳 Recipe shared with the community!'),
+          backgroundColor: widget.color,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      builder: (_, ctrl) => Container(
+        decoration: const BoxDecoration(
+          color: kSurfaceDark,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, bottom + 20),
+        child: ListView(
+          controller: ctrl,
+          children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: const Color(0xFF3A4560), borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
+            const Text('Share Your Recipe', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 4),
+            const Text('Cook 3 meals & show your best dish to the community',
+                style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: _pickPhoto,
+              child: Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  color: kCardDark,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _photo != null ? widget.color : const Color(0xFF2A3550),
+                    width: _photo != null ? 2 : 1,
+                  ),
+                ),
+                child: _photo != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: Image.file(File(_photo!.path), fit: BoxFit.cover, width: double.infinity),
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_a_photo_outlined, color: widget.color, size: 40),
+                          const SizedBox(height: 10),
+                          Text('Tap to pick a photo', style: TextStyle(color: widget.color, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 4),
+                          const Text('Show your best dish!', style: TextStyle(color: kTextSecondary, fontSize: 12)),
+                        ],
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _captionCtrl,
+              style: const TextStyle(color: Colors.white),
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Tell the community about your meal… (optional)',
+                hintStyle: const TextStyle(color: kTextSecondary, fontSize: 13),
+                filled: true,
+                fillColor: kCardDark,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.all(14),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _photo == null || _submitting ? null : _submit,
+                icon: _submitting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                    : const Icon(Icons.send, size: 16),
+                label: Text(_submitting ? 'Sharing…' : 'Share & Complete Challenge'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.color,
+                  foregroundColor: Colors.black,
+                  disabledBackgroundColor: widget.color.withValues(alpha: 0.4),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Recipes Tab ────────────────────────────────────────────────────────────────
+
+class _RecipesTab extends ConsumerWidget {
+  final String displayName;
+  const _RecipesTab({required this.displayName});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return StreamBuilder<List<RecipePost>>(
+      stream: FirebaseService.recipesStream(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: kNeonYellow));
+        }
+        final posts = snap.data ?? [];
+        if (posts.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('👨‍🍳', style: TextStyle(fontSize: 48)),
+                SizedBox(height: 16),
+                Text('No recipes yet', style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                Text('Complete the "Cook 3 Meals" challenge\nto share your first recipe!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: kTextSecondary)),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+          itemCount: posts.length,
+          itemBuilder: (_, i) => _RecipePostCard(post: posts[i]),
+        );
+      },
+    );
+  }
+}
+
+class _RecipePostCard extends ConsumerStatefulWidget {
+  final RecipePost post;
+  const _RecipePostCard({required this.post});
+
+  @override
+  ConsumerState<_RecipePostCard> createState() => _RecipePostCardState();
+}
+
+class _RecipePostCardState extends ConsumerState<_RecipePostCard> {
+  bool _showComments = false;
+  final _commentCtrl = TextEditingController();
+  bool _sendingComment = false;
+
+  @override
+  void dispose() {
+    _commentCtrl.dispose();
+    super.dispose();
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  Future<void> _sendComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _sendingComment = true);
+    await FirebaseService.addRecipeComment(widget.post.id, text);
+    _commentCtrl.clear();
+    if (mounted) setState(() => _sendingComment = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = FirebaseService.uid ?? '';
+    final liked = widget.post.likedBy.contains(myUid);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF2A3550)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: kNeonYellow.withValues(alpha: 0.15),
+                child: Text(
+                  widget.post.displayName.isNotEmpty ? widget.post.displayName[0].toUpperCase() : '?',
+                  style: const TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.post.displayName,
+                      style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(_timeAgo(widget.post.createdAt),
+                      style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                ],
+              )),
+              const Text('👨‍🍳', style: TextStyle(fontSize: 18)),
+            ]),
+          ),
+
+          // Photo
+          if (widget.post.photoBase64.isNotEmpty)
+            Image.memory(
+              base64Decode(widget.post.photoBase64),
+              width: double.infinity,
+              height: 220,
+              fit: BoxFit.cover,
+            ),
+
+          // Caption
+          if (widget.post.caption.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+              child: Text(widget.post.caption,
+                  style: const TextStyle(color: kTextPrimary, fontSize: 13, height: 1.4)),
+            ),
+
+          // Actions
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+            child: Row(children: [
+              IconButton(
+                onPressed: () => FirebaseService.toggleRecipeLike(widget.post.id),
+                icon: Icon(
+                  liked ? Icons.favorite : Icons.favorite_border,
+                  color: liked ? Colors.redAccent : kTextSecondary,
+                  size: 20,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+              Text('${widget.post.likeCount}',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => setState(() => _showComments = !_showComments),
+                icon: Icon(
+                  _showComments ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                  color: _showComments ? kNeonYellow : kTextSecondary,
+                  size: 20,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+              Text('${widget.post.commentCount}',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+            ]),
+          ),
+
+          // Comments
+          if (_showComments) ...[
+            const Divider(color: Color(0xFF2A3550), height: 1),
+            StreamBuilder<List<RecipeComment>>(
+              stream: FirebaseService.recipeCommentsStream(widget.post.id),
+              builder: (_, snap) {
+                final comments = snap.data ?? [];
+                return Column(
+                  children: [
+                    ...comments.map((c) => Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${c.displayName}: ',
+                            style: const TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold, fontSize: 12)),
+                        Expanded(child: Text(c.text,
+                            style: const TextStyle(color: kTextPrimary, fontSize: 12))),
+                      ]),
+                    )),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                      child: Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _commentCtrl,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            decoration: InputDecoration(
+                              hintText: 'Add a comment…',
+                              hintStyle: const TextStyle(color: kTextSecondary, fontSize: 12),
+                              filled: true,
+                              fillColor: kSurfaceDark,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: _sendingComment ? null : _sendComment,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(color: kNeonYellow, shape: BoxShape.circle),
+                            child: _sendingComment
+                                ? const SizedBox(width: 16, height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                                : const Icon(Icons.send, color: Colors.black, size: 16),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ],
       ),
     );
   }

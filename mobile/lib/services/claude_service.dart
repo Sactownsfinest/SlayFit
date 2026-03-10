@@ -107,6 +107,63 @@ Convert cups/glasses/bottles to ml (1 cup=240ml, 1 glass=250ml, 1 bottle=500ml).
     return jsonDecode(clean) as Map<String, dynamic>;
   }
 
+  static Future<String> generateMealPlan({
+    required int calorieGoal,
+    required int proteinG,
+    required int carbsG,
+    required int fatG,
+    required String name,
+    String? editRequest,
+    String? currentPlan,
+  }) async {
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
+
+    final String userPrompt;
+    if (editRequest != null && currentPlan != null && currentPlan.isNotEmpty) {
+      userPrompt =
+          'Here is my current 7-day meal plan:\n$currentPlan\n\n'
+          'Please update it based on this request: $editRequest\n'
+          'Keep exactly this format:\n'
+          'Day 1\nBreakfast: ...\nLunch: ...\nDinner: ...\nSnack: ...\n\nDay 2\n...\n'
+          'Daily goal: ${calorieGoal}kcal, ${proteinG}g protein, ${carbsG}g carbs, ${fatG}g fat.\n'
+          'Return ONLY the updated meal plan text, nothing else.';
+    } else {
+      userPrompt =
+          'Create a 7-day meal plan for $name with a daily goal of ${calorieGoal}kcal, '
+          '${proteinG}g protein, ${carbsG}g carbs, ${fatG}g fat. '
+          'Use exactly this format:\n'
+          'Day 1\nBreakfast: ...\nLunch: ...\nDinner: ...\nSnack: ...\n\nDay 2\n...\n'
+          'Return ONLY the meal plan text, no other content, no extra commentary.';
+    }
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_kGroqApiKey',
+      },
+      body: jsonEncode({
+        'model': _kModel,
+        'messages': [
+          {
+            'role': 'system',
+            'content':
+                'You are a nutrition expert. Generate meal plans in the exact format requested. No extra text.',
+          },
+          {'role': 'user', 'content': userPrompt},
+        ],
+        'max_tokens': 1500,
+      }),
+    ).timeout(const Duration(seconds: 60));
+
+    if (response.statusCode != 200) {
+      throw Exception('api_error_${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['choices'][0]['message']['content'] as String;
+  }
+
   static Future<String> sendMessage({
     required List<Map<String, String>> history,
     required String userMessage,

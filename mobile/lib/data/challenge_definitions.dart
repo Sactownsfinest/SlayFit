@@ -3,7 +3,7 @@
 
 enum ChallengeCategory { daily, weekly, thirtyDay, lifestyle, social, signature }
 
-enum MetricType { steps, calories, protein, water, workouts, foodLogs, manual }
+enum MetricType { steps, calories, protein, water, workouts, foodLogs, manual, photoChallenge }
 
 class ChallengeRequirement {
   final MetricType metric;
@@ -375,13 +375,13 @@ const List<ChallengeDefinition> kAllChallenges = [
     id: 'cook_3_meals',
     name: 'Cook 3 Meals',
     tagline: 'Your kitchen is your gym.',
-    description: 'Cook 3 home-cooked meals today and log them all. Meal prep is self-care.',
+    description: 'Cook 3 home-cooked meals today and share a photo of your best dish with the community. Show your creations — inspire each other.',
     category: ChallengeCategory.lifestyle,
     durationDays: 1,
     badgeEmoji: '👨‍🍳',
     badgeName: 'Home Chef',
     requirements: [
-      ChallengeRequirement(metric: MetricType.manual, targetValue: 1, label: 'Cook and log 3 meals'),
+      ChallengeRequirement(metric: MetricType.photoChallenge, targetValue: 1, label: 'Cook 3 meals + share a photo'),
     ],
   ),
   ChallengeDefinition(

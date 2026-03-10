@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/user_provider.dart';
 import '../services/claude_service.dart';
@@ -63,6 +65,67 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
   String? _error;
   List<_GroceryItem> _items = [];
   List<_MealDay> _parsedDays = [];
+  String _rawMealPlan = '';
+
+  static const _keyRawPlan = 'grocery_raw_plan_v1';
+  static const _keyItems = 'grocery_items_v1';
+  static const _keyMealChecked = 'grocery_meal_checked_v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keyRawPlan) ?? '';
+    final itemsJson = prefs.getString(_keyItems) ?? '';
+    if (raw.isEmpty || itemsJson.isEmpty) return;
+
+    final days = _parseMealPlan(raw);
+    final checkedJson = prefs.getString(_keyMealChecked) ?? '';
+    if (checkedJson.isNotEmpty) {
+      final matrix = jsonDecode(checkedJson) as List;
+      for (int i = 0; i < matrix.length && i < days.length; i++) {
+        final row = matrix[i] as List;
+        for (int j = 0; j < row.length && j < days[i].meals.length; j++) {
+          days[i].meals[j].checked = row[j] as bool? ?? false;
+        }
+      }
+    }
+
+    final rawList = jsonDecode(itemsJson) as List;
+    final items = rawList.map((e) {
+      final m = e as Map<String, dynamic>;
+      return _GroceryItem(
+        name: m['name'] as String,
+        qty: m['qty'] as String,
+        category: m['category'] as String,
+      )..checked = m['checked'] as bool? ?? false;
+    }).toList();
+
+    if (mounted) {
+      setState(() {
+        _rawMealPlan = raw;
+        _parsedDays = days;
+        _items = items;
+      });
+    }
+  }
+
+  Future<void> _persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyRawPlan, _rawMealPlan);
+    await prefs.setString(
+      _keyItems,
+      jsonEncode(_items.map((i) => {'name': i.name, 'qty': i.qty, 'category': i.category, 'checked': i.checked}).toList()),
+    );
+    await prefs.setString(
+      _keyMealChecked,
+      jsonEncode(_parsedDays.map((d) => d.meals.map((m) => m.checked).toList()).toList()),
+    );
+  }
 
   Color _mealTypeColor(String type) {
     switch (type.toLowerCase()) {
@@ -140,10 +203,12 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
       }).where((i) => i.name.isNotEmpty).toList();
 
       setState(() {
+        _rawMealPlan = mealPlan;
         _parsedDays = _parseMealPlan(mealPlan);
         _items = items;
         _loading = false;
       });
+      _persist();
     } catch (e) {
       setState(() {
         _error = 'Could not generate list. Please try again.';
@@ -387,7 +452,10 @@ class _GroceryListScreenState extends ConsumerState<GroceryListScreen> {
                     final mealColor = _mealTypeColor(meal.mealType);
                     return CheckboxListTile(
                       value: meal.checked,
-                      onChanged: (v) => setState(() => meal.checked = v ?? false),
+                      onChanged: (v) {
+                        setState(() => meal.checked = v ?? false);
+                        _persist();
+                      },
                       activeColor: kNeonYellow,
                       checkColor: Colors.black,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 4),

@@ -139,6 +139,74 @@ class SlayChallenge {
   }
 }
 
+// ── Recipe Post ───────────────────────────────────────────────────────────────
+
+class RecipePost {
+  final String id;
+  final String uid;
+  final String displayName;
+  final String photoBase64;
+  final String caption;
+  final List<String> likedBy;
+  final int likeCount;
+  final int commentCount;
+  final DateTime createdAt;
+
+  const RecipePost({
+    required this.id,
+    required this.uid,
+    required this.displayName,
+    required this.photoBase64,
+    required this.caption,
+    required this.likedBy,
+    required this.likeCount,
+    required this.commentCount,
+    required this.createdAt,
+  });
+
+  factory RecipePost.fromFirestore(String id, Map<String, dynamic> d) =>
+      RecipePost(
+        id: id,
+        uid: d['uid'] as String? ?? '',
+        displayName: d['displayName'] as String? ?? 'SlayFit User',
+        photoBase64: d['photoBase64'] as String? ?? '',
+        caption: d['caption'] as String? ?? '',
+        likedBy: List<String>.from(d['likedBy'] as List? ?? []),
+        likeCount: (d['likeCount'] as num? ?? 0).toInt(),
+        commentCount: (d['commentCount'] as num? ?? 0).toInt(),
+        createdAt: d['createdAt'] is Timestamp
+            ? (d['createdAt'] as Timestamp).toDate()
+            : DateTime.now(),
+      );
+}
+
+class RecipeComment {
+  final String id;
+  final String uid;
+  final String displayName;
+  final String text;
+  final DateTime createdAt;
+
+  const RecipeComment({
+    required this.id,
+    required this.uid,
+    required this.displayName,
+    required this.text,
+    required this.createdAt,
+  });
+
+  factory RecipeComment.fromFirestore(String id, Map<String, dynamic> d) =>
+      RecipeComment(
+        id: id,
+        uid: d['uid'] as String? ?? '',
+        displayName: d['displayName'] as String? ?? 'SlayFit User',
+        text: d['text'] as String? ?? '',
+        createdAt: d['createdAt'] is Timestamp
+            ? (d['createdAt'] as Timestamp).toDate()
+            : DateTime.now(),
+      );
+}
+
 // ── App Notification ──────────────────────────────────────────────────────────
 
 class AppNotification {
@@ -588,6 +656,98 @@ class FirebaseService {
               'displayName': d.data()['displayName'] as String? ?? 'Unknown',
             })
         .toList();
+  }
+
+  // ── Recipe Posts ────────────────────────────────────────────────────────────
+
+  /// Post a recipe photo to the community feed.
+  /// [photoBase64] is a base64-encoded JPEG string.
+  static Future<String?> postRecipe({
+    required String photoBase64,
+    required String caption,
+  }) async {
+    try {
+      await ensureSignedIn();
+      final name = await getDisplayName();
+      final ref = _db.collection('recipe_posts').doc();
+      await ref.set({
+        'uid': uid,
+        'displayName': name,
+        'photoBase64': photoBase64,
+        'caption': caption,
+        'likedBy': <String>[],
+        'likeCount': 0,
+        'commentCount': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return ref.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Stream<List<RecipePost>> recipesStream() {
+    return _db
+        .collection('recipe_posts')
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => RecipePost.fromFirestore(d.id, d.data()))
+            .toList());
+  }
+
+  static Future<void> toggleRecipeLike(String postId) async {
+    if (uid == null) return;
+    final ref = _db.collection('recipe_posts').doc(postId);
+    final doc = await ref.get();
+    final data = doc.data();
+    if (data == null) return;
+    final likedBy = List<String>.from(data['likedBy'] as List? ?? []);
+    if (likedBy.contains(uid)) {
+      await ref.update({
+        'likedBy': FieldValue.arrayRemove([uid]),
+        'likeCount': FieldValue.increment(-1),
+      });
+    } else {
+      await ref.update({
+        'likedBy': FieldValue.arrayUnion([uid]),
+        'likeCount': FieldValue.increment(1),
+      });
+    }
+  }
+
+  static Stream<List<RecipeComment>> recipeCommentsStream(String postId) {
+    return _db
+        .collection('recipe_posts')
+        .doc(postId)
+        .collection('comments')
+        .orderBy('createdAt')
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => RecipeComment.fromFirestore(d.id, d.data()))
+            .toList());
+  }
+
+  static Future<void> addRecipeComment(String postId, String text) async {
+    if (uid == null) return;
+    final name = await getDisplayName();
+    final batch = _db.batch();
+    final commentRef = _db
+        .collection('recipe_posts')
+        .doc(postId)
+        .collection('comments')
+        .doc();
+    batch.set(commentRef, {
+      'uid': uid,
+      'displayName': name,
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(_db.collection('recipe_posts').doc(postId), {
+      'commentCount': FieldValue.increment(1),
+    });
+    await batch.commit();
   }
 
   /// Accept a challenge invite — joins the challenge and notifies the sender.

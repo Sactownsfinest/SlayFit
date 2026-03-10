@@ -158,6 +158,28 @@ class FitbitService {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  // Activity summary for a specific date (YYYY-MM-DD)
+  Future<Map<String, dynamic>?> fetchActivitySummaryForDate(String date) async {
+    final token = await getValidAccessToken();
+    if (token == null) return null;
+    try {
+      final uri = Uri.parse('https://api.fitbit.com/1/user/-/activities/date/$date.json');
+      final resp = await http
+          .get(uri, headers: {'Authorization': 'Bearer $token'})
+          .timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final summary = data['summary'] as Map<String, dynamic>?;
+      if (summary == null) return null;
+      return {
+        'steps': (summary['steps'] as num?)?.toInt() ?? 0,
+        'activityCalories': (summary['caloriesOut'] as num?)?.toInt() ?? 0,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Daily activity summary — steps + active calories burned
   Future<Map<String, dynamic>?> fetchTodayActivitySummary() async {
     final token = await getValidAccessToken();
