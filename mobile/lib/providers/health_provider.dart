@@ -221,6 +221,8 @@ class HealthNotifier extends StateNotifier<HealthState>
       if (newMinutes != null)
         await prefs.setInt('fitbit_active_minutes', newMinutes);
       if (newWeight != null) await prefs.setDouble('fitbit_weight_kg', newWeight);
+      // Persist daily history for trend graphs
+      await _saveDailyHistory(prefs, steps: newSteps, burned: newCalories);
     } catch (e) {
       final msg = e.toString();
       // Silently ignore connectivity errors — keep showing cached data
@@ -250,6 +252,20 @@ class HealthNotifier extends StateNotifier<HealthState>
     await prefs.remove('fitbit_weight_kg');
     await prefs.remove('fitbit_display_name');
     state = const HealthState();
+  }
+
+  // ── Daily history persistence (for trend graphs) ─────────────────────────
+
+  static String _todayDateStr() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _saveDailyHistory(SharedPreferences prefs,
+      {int? steps, int? burned}) async {
+    final day = _todayDateStr();
+    if (steps != null) await prefs.setInt('steps_log_$day', steps);
+    if (burned != null) await prefs.setInt('burned_log_$day', burned);
   }
 
   // ── Google Fit ────────────────────────────────────────────────────────────
@@ -303,6 +319,7 @@ class HealthNotifier extends StateNotifier<HealthState>
       final prefs = await SharedPreferences.getInstance();
       if (steps != null) await prefs.setInt('gfit_steps', steps);
       if (calories != null) await prefs.setInt('gfit_calories', calories);
+      await _saveDailyHistory(prefs, steps: steps, burned: calories);
     } catch (_) {}
   }
 
@@ -344,6 +361,8 @@ class HealthNotifier extends StateNotifier<HealthState>
             stepSource: StepSource.pedometer,
             todaySteps: steps,
           );
+          SharedPreferences.getInstance().then(
+              (p) => _saveDailyHistory(p, steps: steps));
         }
       },
       onError: (_) {
@@ -384,12 +403,11 @@ class HealthNotifier extends StateNotifier<HealthState>
   Future<void> logManualSteps(int steps) async {
     if (state.permissionsGranted || state.googleFitConnected ||
         state.pedometerActive) return;
-    final key =
-        'manual_steps_${DateTime.now().toIso8601String().substring(0, 10)}';
+    final day = _todayDateStr();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(key, steps);
-    state =
-        state.copyWith(todaySteps: steps, stepSource: StepSource.manual);
+    await prefs.setInt('manual_steps_$day', steps);
+    await _saveDailyHistory(prefs, steps: steps);
+    state = state.copyWith(todaySteps: steps, stepSource: StepSource.manual);
   }
 
   Future<void> _loadManualSteps() async {

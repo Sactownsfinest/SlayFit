@@ -15,6 +15,8 @@ import '../providers/measurements_provider.dart';
 import 'body_scan_screen.dart';
 import '../providers/records_provider.dart';
 import '../providers/workout_provider.dart';
+import '../providers/health_provider.dart';
+import '../providers/food_provider.dart';
 import '../main.dart';
 
 class ProgressScreen extends ConsumerWidget {
@@ -25,6 +27,9 @@ class ProgressScreen extends ConsumerWidget {
     final weight = ref.watch(weightProvider);
     final streak = ref.watch(streakProvider);
     final profile = ref.watch(userProfileProvider);
+    final health = ref.watch(healthProvider);
+    final water = ref.watch(waterProvider);
+    final food = ref.watch(foodLogProvider);
 
     return CustomScrollView(
       slivers: [
@@ -35,7 +40,7 @@ class ProgressScreen extends ConsumerWidget {
           actions: [
             IconButton(
               icon: const Icon(Icons.share_outlined, color: kNeonYellow),
-              onPressed: () => _shareProgress(weight, streak, profile),
+              onPressed: () => _shareProgress(weight, streak, profile, health, water, food),
             ),
           ],
         ),
@@ -61,6 +66,8 @@ class ProgressScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const _CalorieTrendCard(),
               const SizedBox(height: 16),
+              const _ActivityTrendCard(),
+              const SizedBox(height: 16),
               const _WeeklyInsightsCard(),
               const SizedBox(height: 16),
               _ShareProgressButton(weight: weight, streak: streak, profile: profile),
@@ -71,8 +78,8 @@ class ProgressScreen extends ConsumerWidget {
     );
   }
 
-  void _shareProgress(
-      WeightState weight, StreakState streak, UserProfile profile) {
+  void _shareProgress(WeightState weight, StreakState streak, UserProfile profile,
+      HealthState health, WaterState water, FoodLogState food) {
     final name = profile.name.split(' ').first;
     final lines = <String>['🔥 $name\'s SlayFit Progress', ''];
 
@@ -83,6 +90,19 @@ class ProgressScreen extends ConsumerWidget {
     if (weight.totalLost != null && weight.totalLost! > 0.1) {
       final lostLbs = (weight.totalLost! * 2.20462).toStringAsFixed(1);
       lines.add('📉 Lost: $lostLbs lbs');
+    }
+    if (food.totalCalories > 0) {
+      lines.add('🍽️  Calories eaten today: ${food.totalCalories.toInt()} kcal');
+    }
+    if (health.todayCaloriesBurned != null && health.todayCaloriesBurned! > 0) {
+      lines.add('🔥 Calories burned today: ${health.todayCaloriesBurned} kcal');
+    }
+    if (health.todaySteps != null && health.todaySteps! > 0) {
+      lines.add('👟 Steps today: ${health.todaySteps}');
+    }
+    if (water.todayTotalMl > 0) {
+      final oz = (water.todayTotalMl / 29.5735).toStringAsFixed(0);
+      lines.add('💧 Water: ${water.todayTotalMl} ml ($oz oz)');
     }
     if (streak.currentStreak > 0) {
       lines.add('🔥 ${streak.currentStreak}-day logging streak');
@@ -957,7 +977,7 @@ class _CalorieTrendCardState extends ConsumerState<_CalorieTrendCard> {
 
 // ── Share Progress Button ─────────────────────────────────────────────────────
 
-class _ShareProgressButton extends StatelessWidget {
+class _ShareProgressButton extends ConsumerWidget {
   final WeightState weight;
   final StreakState streak;
   final UserProfile profile;
@@ -968,7 +988,11 @@ class _ShareProgressButton extends StatelessWidget {
     required this.profile,
   });
 
-  void _share() {
+  void _share(WidgetRef ref) {
+    final health = ref.read(healthProvider);
+    final water = ref.read(waterProvider);
+    final food = ref.read(foodLogProvider);
+
     final name = profile.name.split(' ').first;
     final lines = <String>['🔥 $name\'s SlayFit Progress', ''];
 
@@ -980,6 +1004,19 @@ class _ShareProgressButton extends StatelessWidget {
       final lostLbs = (weight.totalLost! * 2.20462).toStringAsFixed(1);
       lines.add('📉 Lost: $lostLbs lbs');
     }
+    if (food.totalCalories > 0) {
+      lines.add('🍽️  Calories eaten today: ${food.totalCalories.toInt()} kcal');
+    }
+    if (health.todayCaloriesBurned != null && health.todayCaloriesBurned! > 0) {
+      lines.add('🔥 Calories burned today: ${health.todayCaloriesBurned} kcal');
+    }
+    if (health.todaySteps != null && health.todaySteps! > 0) {
+      lines.add('👟 Steps today: ${health.todaySteps}');
+    }
+    if (water.todayTotalMl > 0) {
+      final oz = (water.todayTotalMl / 29.5735).toStringAsFixed(0);
+      lines.add('💧 Water: ${water.todayTotalMl} ml ($oz oz)');
+    }
     if (streak.currentStreak > 0) {
       lines.add('🔥 ${streak.currentStreak}-day logging streak');
     }
@@ -990,9 +1027,9 @@ class _ShareProgressButton extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: _share,
+      onTap: () => _share(ref),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1763,6 +1800,304 @@ class _MuscleVolumeCard extends ConsumerWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Activity Trend Card ───────────────────────────────────────────────────────
+
+enum _TrendPeriod { day, week, month }
+enum _TrendMetric { steps, burned }
+
+class _ActivityTrendCard extends ConsumerStatefulWidget {
+  const _ActivityTrendCard();
+
+  @override
+  ConsumerState<_ActivityTrendCard> createState() => _ActivityTrendCardState();
+}
+
+class _ActivityTrendCardState extends ConsumerState<_ActivityTrendCard> {
+  _TrendPeriod _period = _TrendPeriod.day;
+  _TrendMetric _metric = _TrendMetric.steps;
+  bool _loaded = false;
+
+  // Separate data arrays for each period (steps and burned)
+  final List<double> _stepsDay   = List.filled(7, 0);
+  final List<double> _burnedDay  = List.filled(7, 0);
+  final List<String> _dayLabels  = List.filled(7, '');
+
+  final List<double> _stepsWeek  = List.filled(8, 0);
+  final List<double> _burnedWeek = List.filled(8, 0);
+  final List<String> _weekLabels = List.filled(8, '');
+
+  final List<double> _stepsMonth  = List.filled(6, 0);
+  final List<double> _burnedMonth = List.filled(6, 0);
+  final List<String> _monthLabels = List.filled(6, '');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  String _dayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+
+    // ── Day: last 7 days ────────────────────────────────────────────────────
+    for (int i = 6; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final k = _dayKey(date);
+      final idx = 6 - i;
+      _stepsDay[idx]  = (prefs.getInt('steps_log_$k') ?? 0).toDouble();
+      _burnedDay[idx] = (prefs.getInt('burned_log_$k') ?? 0).toDouble();
+      _dayLabels[idx] = _shortDay(date.weekday);
+    }
+
+    // ── Week: last 8 weeks (7-day windows ending today) ─────────────────────
+    for (int w = 7; w >= 0; w--) {
+      double s = 0, b = 0;
+      for (int d = 0; d < 7; d++) {
+        final date = now.subtract(Duration(days: w * 7 - d));
+        final k = _dayKey(date);
+        s += (prefs.getInt('steps_log_$k') ?? 0);
+        b += (prefs.getInt('burned_log_$k') ?? 0);
+      }
+      final idx = 7 - w;
+      _stepsWeek[idx]  = s;
+      _burnedWeek[idx] = b;
+      // Label: start date of the window
+      final start = now.subtract(Duration(days: w * 7 + 6));
+      _weekLabels[idx] = '${start.month}/${start.day}';
+    }
+
+    // ── Month: last 6 months ─────────────────────────────────────────────────
+    for (int m = 5; m >= 0; m--) {
+      final target = DateTime(now.year, now.month - m, 1);
+      final daysInMonth = DateTime(target.year, target.month + 1, 0).day;
+      double s = 0, b = 0;
+      for (int d = 1; d <= daysInMonth; d++) {
+        final date = DateTime(target.year, target.month, d);
+        if (date.isAfter(now)) break;
+        final k = _dayKey(date);
+        s += (prefs.getInt('steps_log_$k') ?? 0);
+        b += (prefs.getInt('burned_log_$k') ?? 0);
+      }
+      final idx = 5 - m;
+      _stepsMonth[idx]  = s;
+      _burnedMonth[idx] = b;
+      _monthLabels[idx] = _shortMonth(target.month);
+    }
+
+    if (mounted) setState(() => _loaded = true);
+  }
+
+  String _shortDay(int weekday) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[weekday - 1];
+  }
+
+  String _shortMonth(int month) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[month - 1];
+  }
+
+  List<double> get _values {
+    switch (_period) {
+      case _TrendPeriod.day:
+        return _metric == _TrendMetric.steps ? _stepsDay : _burnedDay;
+      case _TrendPeriod.week:
+        return _metric == _TrendMetric.steps ? _stepsWeek : _burnedWeek;
+      case _TrendPeriod.month:
+        return _metric == _TrendMetric.steps ? _stepsMonth : _burnedMonth;
+    }
+  }
+
+  List<String> get _labels {
+    switch (_period) {
+      case _TrendPeriod.day:   return _dayLabels;
+      case _TrendPeriod.week:  return _weekLabels;
+      case _TrendPeriod.month: return _monthLabels;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final values = _values;
+    final labels = _labels;
+    final maxY = values.fold<double>(0, (a, b) => a > b ? a : b);
+    final displayMax = maxY > 0 ? maxY * 1.2 : (_metric == _TrendMetric.steps ? 10000.0 : 500.0);
+    final nonZero = values.where((v) => v > 0).toList();
+    final avg = nonZero.isEmpty ? 0 : (nonZero.reduce((a, b) => a + b) / nonZero.length).toInt();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header row: title + period toggle ─────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Activity Trend',
+                  style: TextStyle(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+              Row(
+                children: _TrendPeriod.values.map((p) {
+                  final active = _period == p;
+                  final label = p == _TrendPeriod.day ? 'Day' : p == _TrendPeriod.week ? 'Week' : 'Month';
+                  return GestureDetector(
+                    onTap: () => setState(() => _period = p),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.only(left: 4),
+                      decoration: BoxDecoration(
+                        color: active ? kNeonYellow : const Color(0xFF1A2235),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(label,
+                          style: TextStyle(
+                              color: active ? Colors.black : kTextSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ── Metric toggle ─────────────────────────────────────────────────
+          Row(
+            children: _TrendMetric.values.map((m) {
+              final active = _metric == m;
+              final label = m == _TrendMetric.steps ? 'Steps' : 'Cal Burned';
+              return GestureDetector(
+                onTap: () => setState(() => _metric = m),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                        color: active ? kNeonYellow : const Color(0xFF2A3550)),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(label,
+                      style: TextStyle(
+                          color: active ? kNeonYellow : kTextSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          // ── Chart ─────────────────────────────────────────────────────────
+          if (!_loaded)
+            const SizedBox(
+                height: 120,
+                child: Center(
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: kNeonYellow)))
+          else
+            SizedBox(
+              height: 140,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: displayMax,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (_) =>
+                        const FlLine(color: Color(0xFF2A3550), strokeWidth: 1),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (v, _) {
+                          final i = v.toInt();
+                          if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(labels[i],
+                                style: const TextStyle(
+                                    color: kTextSecondary, fontSize: 9)),
+                          );
+                        },
+                        reservedSize: 20,
+                      ),
+                    ),
+                  ),
+                  barGroups: values.asMap().entries.map((e) {
+                    final isTop = maxY > 0 && e.value == maxY;
+                    return BarChartGroupData(
+                      x: e.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: e.value,
+                          color: isTop
+                              ? kNeonYellow
+                              : kNeonYellow.withValues(alpha: 0.35),
+                          width: _period == _TrendPeriod.month ? 22 : 18,
+                          borderRadius: BorderRadius.circular(4),
+                          backDrawRodData: BackgroundBarChartRodData(
+                            show: true,
+                            toY: displayMax,
+                            color: const Color(0xFF1A2235),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          // ── Summary row ───────────────────────────────────────────────────
+          if (_loaded) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _period == _TrendPeriod.day
+                      ? 'Last 7 days'
+                      : _period == _TrendPeriod.week
+                          ? 'Last 8 weeks'
+                          : 'Last 6 months',
+                  style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                ),
+                Text(
+                  _metric == _TrendMetric.steps
+                      ? 'Avg $avg steps'
+                      : 'Avg $avg kcal',
+                  style: const TextStyle(
+                      color: kNeonYellow,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
