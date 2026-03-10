@@ -54,7 +54,7 @@ class DashboardScreen extends ConsumerWidget {
                         letterSpacing: 2,
                         fontSize: 18,
                       )),
-                  Text('By Shennel',
+                  Text('By Shennel ✦',
                       style: TextStyle(
                         color: kNeonYellow,
                         fontSize: 10,
