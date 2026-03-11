@@ -53,6 +53,68 @@ __WATER_LOG__{"ml":250}__WATER_LOG__
 Convert cups/glasses/bottles to ml (1 cup=240ml, 1 glass=250ml, 1 bottle=500ml). Only include when logging water.""";
   }
 
+  static Future<Map<String, dynamic>> generateFullPlan({
+    required int calorieGoal,
+    required int proteinG,
+    required int carbsG,
+    required int fatG,
+    required String name,
+    String? editRequest,
+    String? currentPlanJson,
+  }) async {
+    final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
+
+    final String userPrompt;
+    if (editRequest != null && currentPlanJson != null && currentPlanJson.isNotEmpty) {
+      userPrompt =
+          'Here is the current 7-day meal plan as JSON:\n$currentPlanJson\n\n'
+          'Update it based on this request: $editRequest\n'
+          'Return ONLY the same JSON structure with the changes applied. '
+          'Daily goal: ${calorieGoal}kcal, ${proteinG}g protein, ${carbsG}g carbs, ${fatG}g fat.';
+    } else {
+      userPrompt =
+          'Create a 7-day meal plan for $name. Daily goal: ${calorieGoal}kcal, ${proteinG}g protein, ${carbsG}g carbs, ${fatG}g fat.\n'
+          'Return ONLY this exact JSON structure (no markdown, no extra text):\n'
+          '{"days":[{"day":1,"meals":[{"type":"Breakfast","name":"Oatmeal with Berries","description":"Creamy oats topped with fresh berries","calories":380,"protein":12,"carbs":65,"fat":7,"ingredients":["1 cup rolled oats","1 cup almond milk","1/2 cup mixed berries","1 tbsp honey"],"instructions":["Bring almond milk to a simmer.","Add oats, cook 5 min stirring.","Pour into bowl, top with berries and honey."]}]}],"groceries":[{"item":"rolled oats","qty":"1 bag","category":"Grains"}]}\n'
+          'Rules:\n'
+          '- 4 meals per day: Breakfast, Lunch, Dinner, Snack\n'
+          '- Each meal: realistic name, 1-line description, estimated macros (must sum close to daily goal across all meals), exact ingredient measurements, 3-5 clear cooking steps\n'
+          '- Groceries: every unique ingredient for the full week with quantity and category (Produce/Protein/Dairy/Grains/Pantry/Other)';
+    }
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_kGroqApiKey',
+      },
+      body: jsonEncode({
+        'model': _kModel,
+        'messages': [
+          {
+            'role': 'system',
+            'content': 'You are a professional nutritionist and chef. Respond ONLY with valid JSON — no markdown fences, no explanation, no extra text.',
+          },
+          {'role': 'user', 'content': userPrompt},
+        ],
+        'max_tokens': 6000,
+      }),
+    ).timeout(const Duration(seconds: 90));
+
+    if (response.statusCode != 200) {
+      throw Exception('api_error_${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final content = data['choices'][0]['message']['content'] as String;
+    final clean = content
+        .replaceAll(RegExp(r'```json\s*'), '')
+        .replaceAll(RegExp(r'```\s*'), '')
+        .trim();
+
+    return jsonDecode(clean) as Map<String, dynamic>;
+  }
+
   static Future<Map<String, dynamic>> generateGroceryList({
     required int calorieGoal,
     required int proteinG,
