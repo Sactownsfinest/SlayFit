@@ -9,5 +9,7 @@ set SRC=build\app\outputs\flutter-apk\app-debug.apk
 set DEST=build\app\outputs\flutter-apk\slayfit.apk
 if exist "%DEST%" del "%DEST%"
 rename "%SRC%" slayfit.apk
+if exist "slayfit.apk" del "slayfit.apk"
+copy "build\app\outputs\flutter-apk\slayfit.apk" "slayfit.apk" >nul
 echo.
-echo Done! APK: build\app\outputs\flutter-apk\slayfit.apk
+echo Done! APK: slayfit.apk
