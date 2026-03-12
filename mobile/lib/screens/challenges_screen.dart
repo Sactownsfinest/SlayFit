@@ -270,6 +270,7 @@ class _JoinButton extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(challengesProvider.notifier).joinChallenge(def.id);
+        FirebaseService.updateCatalogCheckin(def.id, []);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Challenge accepted: ${def.name}'),
@@ -290,12 +291,29 @@ class _JoinButton extends ConsumerWidget {
 
 // ── Active Challenges Tab ─────────────────────────────────────────────────────
 
-class _ActiveTab extends ConsumerWidget {
+class _ActiveTab extends ConsumerStatefulWidget {
   const _ActiveTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ActiveTab> createState() => _ActiveTabState();
+}
+
+class _ActiveTabState extends ConsumerState<_ActiveTab> {
+  bool _synced = false;
+
+  @override
+  Widget build(BuildContext context) {
     final challenges = ref.watch(challengesProvider);
+    debugPrint('ACCOUNTABILITY: active=${challenges.active.length}, synced=$_synced');
+    if (!_synced && challenges.active.isNotEmpty) {
+      _synced = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final uc in challenges.active) {
+          debugPrint('ACCOUNTABILITY: syncing ${uc.definitionId} dates=${uc.completedDates}');
+          FirebaseService.updateCatalogCheckin(uc.definitionId, uc.completedDates);
+        }
+      });
+    }
     if (challenges.active.isEmpty) {
       return Center(
         child: Column(
@@ -444,9 +462,15 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
       stream: FirebaseService.catalogCheckinStream(challengeId),
       builder: (context, snap) {
         final all = snap.data ?? [];
-        final others = all.where((p) => p['uid'] != FirebaseService.uid).toList();
-        if (others.isEmpty) return const SizedBox.shrink();
+        debugPrint('ACCOUNTABILITY STREAM: id=$challengeId count=${all.length} err=${snap.error}');
+        if (all.isEmpty) return const SizedBox.shrink();
         final today = DateTime.now().toIso8601String().substring(0, 10);
+        // Sort: self first, then others
+        final sorted = [...all]..sort((a, b) {
+            final aIsMe = a['uid'] == FirebaseService.uid ? 0 : 1;
+            final bIsMe = b['uid'] == FirebaseService.uid ? 0 : 1;
+            return aIsMe.compareTo(bIsMe);
+          });
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -464,11 +488,14 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            ...others.take(5).map((p) {
-              final name = p['displayName'] as String? ?? 'Someone';
+            ...sorted.take(6).map((p) {
+              final isMe = p['uid'] == FirebaseService.uid;
+              final rawName = p['displayName'] as String? ?? 'Someone';
+              final name = isMe ? 'You' : rawName;
               final dates = (p['completedDates'] as List?)?.length ?? 0;
               final checkedToday =
                   (p['completedDates'] as List? ?? []).contains(today);
+              final avatarColor = isMe ? kNeonYellow : Colors.cyanAccent;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 7),
                 child: Row(
@@ -477,14 +504,14 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
                       width: 26,
                       height: 26,
                       decoration: BoxDecoration(
-                        color: kNeonYellow.withValues(alpha: 0.1),
+                        color: avatarColor.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
                       child: Center(
                         child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                              color: kNeonYellow,
+                          rawName.isNotEmpty ? rawName[0].toUpperCase() : '?',
+                          style: TextStyle(
+                              color: avatarColor,
                               fontSize: 11,
                               fontWeight: FontWeight.bold),
                         ),
@@ -493,8 +520,8 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(name,
-                          style: const TextStyle(
-                              color: kTextPrimary,
+                          style: TextStyle(
+                              color: isMe ? kNeonYellow : kTextPrimary,
                               fontSize: 12,
                               fontWeight: FontWeight.w500)),
                     ),
@@ -920,6 +947,7 @@ class _DetailSheet extends ConsumerWidget {
                 child: ElevatedButton(
                   onPressed: () {
                     ref.read(challengesProvider.notifier).joinChallenge(def.id);
+                    FirebaseService.updateCatalogCheckin(def.id, []);
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: Text('Challenge accepted: ${def.name}'),

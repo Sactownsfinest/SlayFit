@@ -273,6 +273,7 @@ class _ReqResult {
 class _ActiveChallengeCard extends ConsumerWidget {
   final UserChallenge uc;
   const _ActiveChallengeCard({required this.uc});
+  static final _syncedIds = <String>{};
 
   List<_ReqResult> _computeReqs(WidgetRef ref) {
     final def = uc.definition;
@@ -409,6 +410,14 @@ class _ActiveChallengeCard extends ConsumerWidget {
         ref.read(challengesProvider.notifier).checkInToday(def.id);
         final newScore = (uc.completedDates.length + 1).toDouble();
         FirebaseService.syncCatalogChallengeScore(def.id, newScore);
+      });
+    }
+
+    // Sync this user's participation to Firestore for accountability (once per session)
+    if (!_syncedIds.contains(def.id)) {
+      _syncedIds.add(def.id);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FirebaseService.updateCatalogCheckin(def.id, uc.completedDates);
       });
     }
 
@@ -610,9 +619,98 @@ class _ActiveChallengeCard extends ConsumerWidget {
                   ),
                 ),
               ),
+
+            // ── Accountability section ──
+            _AccountabilitySection(challengeId: def.id),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Accountability section for active challenge cards ─────────────────────────
+
+class _AccountabilitySection extends StatelessWidget {
+  final String challengeId;
+  const _AccountabilitySection({required this.challengeId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirebaseService.catalogCheckinStream(challengeId),
+      builder: (context, snap) {
+        final all = snap.data ?? [];
+        if (all.isEmpty) return const SizedBox.shrink();
+        final today = DateTime.now().toIso8601String().substring(0, 10);
+        final sorted = [...all]..sort((a, b) {
+            final aIsMe = a['uid'] == FirebaseService.uid ? 0 : 1;
+            final bIsMe = b['uid'] == FirebaseService.uid ? 0 : 1;
+            return aIsMe.compareTo(bIsMe);
+          });
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(color: Color(0xFF2A3550), height: 20),
+            const Row(children: [
+              Icon(Icons.people_outline, color: kTextSecondary, size: 13),
+              SizedBox(width: 5),
+              Text('Accountability',
+                  style: TextStyle(
+                      color: kTextSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5)),
+            ]),
+            const SizedBox(height: 8),
+            ...sorted.take(6).map((p) {
+              final isMe = p['uid'] == FirebaseService.uid;
+              final rawName = p['displayName'] as String? ?? 'Someone';
+              final name = isMe ? 'You' : rawName;
+              final dates = (p['completedDates'] as List?)?.length ?? 0;
+              final checkedToday = (p['completedDates'] as List? ?? []).contains(today);
+              final avatarColor = isMe ? kNeonYellow : Colors.cyanAccent;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                        color: avatarColor.withValues(alpha: 0.15),
+                        shape: BoxShape.circle),
+                    child: Center(
+                      child: Text(
+                        rawName.isNotEmpty ? rawName[0].toUpperCase() : '?',
+                        style: TextStyle(
+                            color: avatarColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(name,
+                        style: TextStyle(
+                            color: isMe ? kNeonYellow : kTextPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500)),
+                  ),
+                  if (checkedToday)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 4),
+                      child: Icon(Icons.check_circle,
+                          color: Colors.greenAccent, size: 14),
+                    ),
+                  Text('$dates day${dates != 1 ? 's' : ''}',
+                      style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                ]),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 }
@@ -1302,21 +1400,65 @@ class _ChallengesTabState extends ConsumerState<_ChallengesTab> {
 
 // ── Challenge Card ────────────────────────────────────────────────────────────
 
-class _ChallengeCard extends StatelessWidget {
+class _ChallengeCard extends ConsumerStatefulWidget {
   final SlayChallenge challenge;
-  final WidgetRef ref;
   final VoidCallback onSync;
   final VoidCallback onInviteUser;
 
   const _ChallengeCard({
     required this.challenge,
-    required this.ref,
+    required WidgetRef ref,
     required this.onSync,
     required this.onInviteUser,
   });
 
   @override
+  ConsumerState<_ChallengeCard> createState() => _ChallengeCardState();
+}
+
+class _ChallengeCardState extends ConsumerState<_ChallengeCard> {
+  bool _syncing = false;
+
+  Future<void> _doSync() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final c = widget.challenge;
+      final uid = FirebaseService.uid;
+      if (uid == null) return;
+      double score = 0;
+      switch (c.type) {
+        case ChallengeType.calories:
+          score = ref.read(activityProvider).todayCaloriesBurned * c.durationDays;
+          break;
+        case ChallengeType.workouts:
+          score = ref.read(activityProvider).todayEntries.length.toDouble();
+          break;
+        case ChallengeType.streak:
+          score = ref.read(streakProvider).currentStreak.toDouble();
+          break;
+        case ChallengeType.goalHits:
+          final food = ref.read(foodLogProvider);
+          score = food.totalCalories >= food.dailyCalorieGoal ? 1 : 0;
+          break;
+      }
+      await FirebaseService.updateMyScore(c.id, score);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Score synced: ${score.toStringAsFixed(0)} ${c.type.unit}'),
+          backgroundColor: kNeonYellow,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final challenge = widget.challenge;
     final uid = FirebaseService.uid ?? '';
     final rank = challenge.myRank(uid);
     final score = challenge.myScore(uid);
@@ -1434,21 +1576,37 @@ class _ChallengeCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onSync,
-                  icon: const Icon(Icons.sync, size: 14),
-                  label: const Text('Sync Score'),
+                child: OutlinedButton(
+                  onPressed: _syncing ? null : _doSync,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kNeonYellow,
                     side: BorderSide(color: kNeonYellow.withValues(alpha: 0.4)),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
+                  child: _syncing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(kNeonYellow),
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.sync, size: 14),
+                            SizedBox(width: 6),
+                            Text('Sync Score'),
+                          ],
+                        ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: onInviteUser,
+                  onPressed: widget.onInviteUser,
                   icon: const Icon(Icons.person_add_outlined, size: 14),
                   label: const Text('Invite User'),
                   style: OutlinedButton.styleFrom(

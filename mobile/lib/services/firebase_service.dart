@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -546,17 +547,17 @@ class FirebaseService {
     }, SetOptions(merge: true));
   }
 
-  /// Search registered users by display name (prefix match, excludes self).
+  /// Search registered users by display name (case-insensitive, excludes self).
   static Future<List<Map<String, String>>> searchUsers(String query) async {
-    if (query.trim().isEmpty) return [];
-    final snap = await _db
-        .collection('users')
-        .where('displayName', isGreaterThanOrEqualTo: query)
-        .where('displayName', isLessThanOrEqualTo: '$query\uf8ff')
-        .limit(10)
-        .get();
+    final q = query.trim().toLowerCase();
+    final snap = await _db.collection('users').limit(50).get();
     return snap.docs
         .where((d) => d.id != uid)
+        .where((d) {
+          if (q.isEmpty) return true;
+          final name = (d.data()['displayName'] as String? ?? '').toLowerCase();
+          return name.contains(q);
+        })
         .map((d) => {
               'uid': d.data()['uid'] as String? ?? d.id,
               'displayName': d.data()['displayName'] as String? ?? 'Unknown',
@@ -663,9 +664,10 @@ class FirebaseService {
   /// Write this user's check-in progress for a catalog challenge so others can see it.
   static Future<void> updateCatalogCheckin(
       String challengeId, List<String> completedDates) async {
-    if (uid == null) return;
+    if (uid == null) { debugPrint('CHECKIN: uid is null, skipping'); return; }
     try {
       final name = await getDisplayName();
+      debugPrint('CHECKIN: writing $challengeId for $uid ($name)');
       await _db
           .collection('catalog_checkins')
           .doc(challengeId)
@@ -677,7 +679,8 @@ class FirebaseService {
         'completedDates': completedDates,
         'lastCheckIn': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
-    } catch (_) {}
+      debugPrint('CHECKIN: write success');
+    } catch (e) { debugPrint('CHECKIN ERROR: $e'); }
   }
 
   /// Stream all participants' progress for a catalog challenge.
