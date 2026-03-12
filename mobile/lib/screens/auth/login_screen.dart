@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart';
 import '../../providers/auth_provider.dart';
 import 'email_login_screen.dart';
-import 'phone_login_screen.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends ConsumerWidget {
@@ -92,17 +91,6 @@ class LoginScreen extends ConsumerWidget {
                     backgroundColor: Colors.white,
                     textColor: Colors.black87,
                     onTap: () => ref.read(authProvider.notifier).signInWithGoogle(),
-                  ),
-                  const SizedBox(height: 12),
-                  _SocialButton(
-                    label: 'Continue with Phone',
-                    icon: const Icon(Icons.phone, color: Colors.white, size: 22),
-                    backgroundColor: const Color(0xFF1C1C1E),
-                    textColor: Colors.white,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const PhoneLoginScreen()),
-                    ),
                   ),
                   const SizedBox(height: 20),
                   Row(

@@ -8,6 +8,8 @@ import '../providers/user_provider.dart';
 import '../providers/water_provider.dart';
 import '../providers/workout_provider.dart';
 import '../providers/health_provider.dart';
+import '../services/firebase_service.dart';
+import '../widgets/app_bell_icon.dart';
 
 // ── Category styling ─────────────────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen>
             Text('Challenges', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 20)),
           ],
         ),
+        actions: const [AppBellIcon()],
         bottom: TabBar(
           controller: _tab,
           labelColor: kNeonYellow,
@@ -390,6 +393,8 @@ class _ActiveCard extends ConsumerWidget {
               style: const TextStyle(color: kTextSecondary, fontSize: 11),
             ),
             const SizedBox(height: 14),
+            _ChallengeAccountabilityRow(challengeId: def.id),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: checkedIn
@@ -423,6 +428,94 @@ class _ActiveCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Challenge Accountability Row ──────────────────────────────────────────────
+
+class _ChallengeAccountabilityRow extends StatelessWidget {
+  final String challengeId;
+  const _ChallengeAccountabilityRow({required this.challengeId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirebaseService.catalogCheckinStream(challengeId),
+      builder: (context, snap) {
+        final all = snap.data ?? [];
+        final others = all.where((p) => p['uid'] != FirebaseService.uid).toList();
+        if (others.isEmpty) return const SizedBox.shrink();
+        final today = DateTime.now().toIso8601String().substring(0, 10);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(color: Color(0xFF2A3550), height: 20),
+            const Row(
+              children: [
+                Icon(Icons.people_outline, color: kTextSecondary, size: 13),
+                SizedBox(width: 5),
+                Text('Accountability',
+                    style: TextStyle(
+                        color: kTextSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...others.take(5).map((p) {
+              final name = p['displayName'] as String? ?? 'Someone';
+              final dates = (p['completedDates'] as List?)?.length ?? 0;
+              final checkedToday =
+                  (p['completedDates'] as List? ?? []).contains(today);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: kNeonYellow.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                              color: kNeonYellow,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(name,
+                          style: const TextStyle(
+                              color: kTextPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500)),
+                    ),
+                    if (checkedToday)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 4),
+                        child: Icon(Icons.check_circle,
+                            color: Colors.greenAccent, size: 14),
+                      ),
+                    Text(
+                      '$dates day${dates != 1 ? 's' : ''}',
+                      style: const TextStyle(
+                          color: kTextSecondary, fontSize: 11),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 }
@@ -918,18 +1011,21 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
           return todayMeals >= req.targetValue;
         case MetricType.manual:
           return _manualConfirmed;
+        case MetricType.photoChallenge:
+          return _manualConfirmed;
       }
     }
 
     String _metricValue(ChallengeRequirement req) {
       switch (req.metric) {
-        case MetricType.steps:   return '${health.todaySteps ?? 0} steps';
-        case MetricType.calories: return '${food.totalCalories.round()} / ${food.dailyCalorieGoal.round()} kcal';
-        case MetricType.protein:  return '${todayProtein.round()}g / ${profile.proteinGoalG}g protein';
-        case MetricType.water:    return '${water.todayTotalMl}ml / ${req.targetValue.round()}ml';
-        case MetricType.workouts: return '$todayWorkouts workout(s) today';
-        case MetricType.foodLogs: return '$todayMeals entries logged today';
-        case MetricType.manual:   return _manualConfirmed ? 'Confirmed ✓' : 'Tap to confirm';
+        case MetricType.steps:         return '${health.todaySteps ?? 0} steps';
+        case MetricType.calories:      return '${food.totalCalories.round()} / ${food.dailyCalorieGoal.round()} kcal';
+        case MetricType.protein:       return '${todayProtein.round()}g / ${profile.proteinGoalG}g protein';
+        case MetricType.water:         return '${water.todayTotalMl}ml / ${req.targetValue.round()}ml';
+        case MetricType.workouts:      return '$todayWorkouts workout(s) today';
+        case MetricType.foodLogs:      return '$todayMeals entries logged today';
+        case MetricType.manual:        return _manualConfirmed ? 'Confirmed ✓' : 'Tap to confirm';
+        case MetricType.photoChallenge: return _manualConfirmed ? 'Photo submitted ✓' : 'Submit a photo to confirm';
       }
     }
 
@@ -1005,7 +1101,10 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
               child: ElevatedButton(
                 onPressed: (allMet || hasManual && _manualConfirmed)
                     ? () {
+                        final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+                        final newDates = [...widget.uc.completedDates, todayStr];
                         final finished = ref.read(challengesProvider.notifier).checkInToday(def.id);
+                        FirebaseService.updateCatalogCheckin(def.id, newDates);
                         Navigator.pop(context);
                         if (finished) {
                           _showCompletionDialog(context, def, color);
@@ -1036,7 +1135,10 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () {
+                  final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+                  final newDates = [...widget.uc.completedDates, todayStr];
                   ref.read(challengesProvider.notifier).checkInToday(def.id);
+                  FirebaseService.updateCatalogCheckin(def.id, newDates);
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text("${def.badgeEmoji} Logged — keep pushing!"),

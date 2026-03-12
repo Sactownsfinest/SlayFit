@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
@@ -10,6 +11,7 @@ import '../providers/food_provider.dart';
 import '../providers/streak_provider.dart';
 import '../providers/water_provider.dart';
 import '../services/notification_service.dart';
+import '../widgets/app_bell_icon.dart';
 import '../providers/health_provider.dart';
 import '../providers/measurements_provider.dart';
 import '../providers/challenges_provider.dart';
@@ -45,6 +47,7 @@ class ProfileScreen extends ConsumerWidget {
           floating: true,
           snap: true,
           title: Text('Profile'),
+          actions: [AppBellIcon()],
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
@@ -387,6 +390,23 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 20),
+
+              // App version
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (_, snap) {
+                  final version = snap.data != null
+                      ? 'v${snap.data!.version} (${snap.data!.buildNumber})'
+                      : '—';
+                  return Center(
+                    child: Text(
+                      'SlayFit $version',
+                      style: const TextStyle(color: kTextSecondary, fontSize: 12),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
 
               // Sign out
               SizedBox(

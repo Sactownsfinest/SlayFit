@@ -658,6 +658,39 @@ class FirebaseService {
         .toList();
   }
 
+  // ── Catalog Challenge Accountability ───────────────────────────────────────
+
+  /// Write this user's check-in progress for a catalog challenge so others can see it.
+  static Future<void> updateCatalogCheckin(
+      String challengeId, List<String> completedDates) async {
+    if (uid == null) return;
+    try {
+      final name = await getDisplayName();
+      await _db
+          .collection('catalog_checkins')
+          .doc(challengeId)
+          .collection('users')
+          .doc(uid)
+          .set({
+        'uid': uid,
+        'displayName': name,
+        'completedDates': completedDates,
+        'lastCheckIn': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  /// Stream all participants' progress for a catalog challenge.
+  static Stream<List<Map<String, dynamic>>> catalogCheckinStream(
+      String challengeId) {
+    return _db
+        .collection('catalog_checkins')
+        .doc(challengeId)
+        .collection('users')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => d.data()).toList());
+  }
+
   // ── Recipe Posts ────────────────────────────────────────────────────────────
 
   /// Post a recipe photo to the community feed.

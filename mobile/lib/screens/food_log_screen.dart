@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/food_provider.dart';
 import '../providers/meal_plan_provider.dart';
+import '../providers/notification_feed_provider.dart';
+import '../widgets/app_bell_icon.dart';
 import '../providers/recipe_provider.dart';
 import '../providers/user_provider.dart';
 import '../main.dart';
@@ -47,6 +49,7 @@ class _FoodLogScreenState extends ConsumerState<FoodLogScreen>
           snap: true,
           title: const Text('Food'),
           actions: [
+            const AppBellIcon(),
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined, color: kNeonYellow),
               tooltip: 'Scan your plate',
@@ -3383,6 +3386,16 @@ class _PlanTabState extends ConsumerState<_PlanTab> {
   @override
   Widget build(BuildContext context) {
     final plan = ref.watch(mealPlanProvider);
+
+    ref.listen<MealPlanState>(mealPlanProvider, (prev, next) {
+      if (prev?.isGenerating == true && !next.isGenerating && next.hasPlan) {
+        ref.read(notifFeedProvider.notifier).add(
+          '7-Day Meal Plan Ready!',
+          'Your personalized meal plan has been generated.',
+          'meal_plan',
+        );
+      }
+    });
 
     if (plan.isGenerating) {
       return Column(

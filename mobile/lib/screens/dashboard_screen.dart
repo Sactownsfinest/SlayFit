@@ -9,6 +9,7 @@ import '../providers/water_provider.dart';
 import '../providers/streak_provider.dart';
 import '../providers/health_provider.dart';
 import '../main.dart';
+import '../widgets/app_bell_icon.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -65,12 +66,7 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ],
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined, color: kTextSecondary),
-              onPressed: () {},
-            ),
-          ],
+          actions: const [AppBellIcon()],
         ),
         SliverPadding(
           padding: const EdgeInsets.all(16),

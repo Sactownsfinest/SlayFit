@@ -18,6 +18,7 @@ import '../providers/water_provider.dart';
 import '../providers/user_provider.dart';
 import '../data/challenge_definitions.dart';
 import '../services/firebase_service.dart';
+import '../widgets/app_bell_icon.dart';
 
 // ── Root Screen ───────────────────────────────────────────────────────────────
 
@@ -74,42 +75,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
             Text('Community'),
           ],
         ),
-        actions: [
-          if (_initialized)
-            StreamBuilder<List<AppNotification>>(
-              stream: FirebaseService.myNotificationsStream(),
-              builder: (_, snap) {
-                final unread = (snap.data ?? []).where((n) => !n.read).length;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.notifications_outlined, color: kTextSecondary),
-                      onPressed: () => showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: kSurfaceDark,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                        ),
-                        builder: (_) => const _NotificationsPanel(),
-                      ),
-                    ),
-                    if (unread > 0)
-                      Positioned(
-                        right: 6,
-                        top: 6,
-                        child: Container(
-                          width: 16, height: 16,
-                          decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                          child: Center(child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold))),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-        ],
+        actions: const [AppBellIcon()],
         bottom: TabBar(
           controller: _tab,
           indicatorColor: kNeonYellow,
@@ -1917,11 +1883,14 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
   bool _sending = false;
   bool _speechAvailable = false;
   bool _listening = false;
+  List<Map<String, String>> _mentionSuggestions = [];
+  bool _showMentions = false;
 
   @override
   void initState() {
     super.initState();
     _initSpeech();
+    _inputCtrl.addListener(_onTextChanged);
   }
 
   Future<void> _initSpeech() async {
@@ -1955,9 +1924,42 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
     );
   }
 
+  void _onTextChanged() {
+    final text = _inputCtrl.text;
+    final cursor = _inputCtrl.selection.baseOffset;
+    if (cursor < 0) return;
+    final before = text.substring(0, cursor.clamp(0, text.length));
+    final match = RegExp(r'@(\w*)$').firstMatch(before);
+    if (match != null) {
+      final query = match.group(1) ?? '';
+      _searchMentions(query);
+    } else {
+      if (_showMentions) setState(() { _showMentions = false; _mentionSuggestions = []; });
+    }
+  }
+
+  Future<void> _searchMentions(String query) async {
+    final results = await FirebaseService.searchUsers(query);
+    if (mounted) setState(() { _mentionSuggestions = results; _showMentions = results.isNotEmpty; });
+  }
+
+  void _insertMention(String name) {
+    final text = _inputCtrl.text;
+    final cursor = _inputCtrl.selection.baseOffset.clamp(0, text.length);
+    final before = text.substring(0, cursor);
+    final after = text.substring(cursor);
+    final newBefore = before.replaceAll(RegExp(r'@\w*$'), '@$name ');
+    _inputCtrl.value = TextEditingValue(
+      text: newBefore + after,
+      selection: TextSelection.collapsed(offset: newBefore.length),
+    );
+    setState(() { _showMentions = false; _mentionSuggestions = []; });
+  }
+
   @override
   void dispose() {
     _speech.stop();
+    _inputCtrl.removeListener(_onTextChanged);
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -2025,7 +2027,35 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
             border:
                 Border(top: BorderSide(color: Color(0xFF2A3550), width: 1)),
           ),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_showMentions && _mentionSuggestions.isNotEmpty)
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  margin: const EdgeInsets.only(bottom: 6),
+                  decoration: BoxDecoration(
+                    color: kCardDark,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF2A3550)),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _mentionSuggestions.length,
+                    itemBuilder: (_, i) {
+                      final user = _mentionSuggestions[i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.alternate_email, color: kNeonYellow, size: 16),
+                        title: Text(user['displayName'] ?? '',
+                            style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                        onTap: () => _insertMention(user['displayName'] ?? ''),
+                      );
+                    },
+                  ),
+                ),
+              Row(
             children: [
               if (_speechAvailable) ...[
                 GestureDetector(
@@ -2093,6 +2123,8 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
               ),
             ],
           ),
+            ],
+          ),
         ),
       ],
     );
@@ -2104,6 +2136,33 @@ class _ChatBubble extends StatelessWidget {
   final bool isMe;
 
   const _ChatBubble({required this.msg, required this.isMe});
+
+  Widget _buildMessageText(String text, bool isMe) {
+    final baseColor = isMe ? kNeonYellow : kTextPrimary;
+    final parts = <InlineSpan>[];
+    int last = 0;
+    for (final match in RegExp(r'@\w+').allMatches(text)) {
+      if (match.start > last) {
+        parts.add(TextSpan(text: text.substring(last, match.start)));
+      }
+      parts.add(TextSpan(
+        text: match.group(0),
+        style: TextStyle(
+          color: kNeonYellow,
+          fontWeight: FontWeight.bold,
+          backgroundColor: kNeonYellow.withValues(alpha: 0.15),
+        ),
+      ));
+      last = match.end;
+    }
+    if (last < text.length) parts.add(TextSpan(text: text.substring(last)));
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(color: baseColor, fontSize: 14, height: 1.4),
+        children: parts,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2146,11 +2205,7 @@ class _ChatBubble extends StatelessWidget {
                             color: kNeonYellow.withValues(alpha: 0.3))
                         : null,
                   ),
-                  child: Text(msg.text,
-                      style: TextStyle(
-                          color: isMe ? kNeonYellow : kTextPrimary,
-                          fontSize: 14,
-                          height: 1.4)),
+                  child: _buildMessageText(msg.text, isMe),
                 ),
               ),
             ],
@@ -2209,172 +2264,6 @@ class _ActionButton extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Notifications Tab ─────────────────────────────────────────────────────────
-
-class _NotificationsPanel extends StatelessWidget {
-  const _NotificationsPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      maxChildSize: 0.92,
-      builder: (_, controller) => Column(
-        children: [
-          // Drag handle
-          Container(
-            width: 40, height: 4,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
-              children: [
-                Icon(Icons.notifications_outlined, color: kNeonYellow, size: 20),
-                SizedBox(width: 8),
-                Text('Notifications', style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<AppNotification>>(
-              stream: FirebaseService.myNotificationsStream(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: kNeonYellow));
-                }
-                final notifs = snap.data ?? [];
-                if (notifs.isEmpty) {
-                  return const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.notifications_none, color: kTextSecondary, size: 48),
-                        SizedBox(height: 16),
-                        Text('No notifications yet', style: TextStyle(color: kTextPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                        SizedBox(height: 8),
-                        Text('Challenge invites and updates\nwill appear here.', textAlign: TextAlign.center, style: TextStyle(color: kTextSecondary)),
-                      ],
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  controller: controller,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                  itemCount: notifs.length,
-                  itemBuilder: (_, i) => _NotifCard(notif: notifs[i]),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NotifCard extends ConsumerWidget {
-  final AppNotification notif;
-  const _NotifCard({required this.notif});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isInvite = notif.type == 'challenge_invite';
-    final color = isInvite ? const Color(0xFF007AFF) : const Color(0xFF34C759);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: notif.read ? kCardDark : color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: notif.read ? const Color(0xFF2A3550) : color.withValues(alpha: 0.4)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(isInvite ? Icons.emoji_events_outlined : Icons.check_circle_outline, color: color, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isInvite
-                        ? '${notif.fromName} invited you to a challenge'
-                        : '${notif.fromName} accepted your challenge invite',
-                    style: TextStyle(color: kTextPrimary, fontWeight: notif.read ? FontWeight.normal : FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-                if (!notif.read)
-                  Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-              ],
-            ),
-            if (notif.challengeName != null) ...[
-              const SizedBox(height: 4),
-              Text('"${notif.challengeName}"', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-            const SizedBox(height: 10),
-            if (isInvite)
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        // Join the catalog challenge locally if definitionId is present
-                        if (notif.definitionId != null) {
-                          ref.read(challengesProvider.notifier).joinChallenge(notif.definitionId!);
-                        }
-                        await FirebaseService.acceptChallengeInvite(notif);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('Joined "${notif.challengeName}"! 🏆'),
-                            backgroundColor: kNeonYellow,
-                            behavior: SnackBarBehavior.floating,
-                          ));
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: kNeonYellow,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => FirebaseService.deleteNotification(notif.id),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: kTextSecondary,
-                        side: const BorderSide(color: Color(0xFF2A3550)),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: const Text('Decline'),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => FirebaseService.markNotificationRead(notif.id),
-                  child: const Text('Dismiss', style: TextStyle(color: kTextSecondary, fontSize: 12)),
-                ),
-              ),
           ],
         ),
       ),

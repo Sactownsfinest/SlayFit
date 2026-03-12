@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
+import '../widgets/app_bell_icon.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/weight_provider.dart';
 import '../providers/user_provider.dart';
@@ -38,6 +39,7 @@ class ProgressScreen extends ConsumerWidget {
           snap: true,
           title: const Text('Progress'),
           actions: [
+            const AppBellIcon(),
             IconButton(
               icon: const Icon(Icons.share_outlined, color: kNeonYellow),
               onPressed: () => _shareProgress(weight, streak, profile, health, water, food),
@@ -51,6 +53,8 @@ class ProgressScreen extends ConsumerWidget {
               _WeightStatsRow(weight: weight),
               const SizedBox(height: 16),
               _BMICard(weight: weight, profile: profile),
+              const SizedBox(height: 16),
+              _BMRCard(weight: weight, profile: profile),
               const SizedBox(height: 16),
               _WeightChartCard(weight: weight),
               const SizedBox(height: 16),
@@ -1129,6 +1133,148 @@ class _BMICard extends ConsumerWidget {
           const Text('Healthy: 18.5–24.9',
               style: TextStyle(color: kTextSecondary, fontSize: 11)),
         ],
+      ),
+    );
+  }
+}
+
+// ── BMR Card ──────────────────────────────────────────────────────────────────
+
+class _BMRCard extends StatelessWidget {
+  final WeightState weight;
+  final UserProfile profile;
+  const _BMRCard({required this.weight, required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    if (weight.latest == null || profile.heightCm <= 0) {
+      return const SizedBox.shrink();
+    }
+    final wKg = weight.latest!.weightKg;
+    final hCm = profile.heightCm;
+    final double bmr;
+    switch (profile.sex.toUpperCase()) {
+      case 'M':
+        bmr = 10 * wKg + 6.25 * hCm - 145;
+        break;
+      case 'F':
+        bmr = 10 * wKg + 6.25 * hCm - 311;
+        break;
+      default:
+        bmr = 10 * wKg + 6.25 * hCm - 228;
+    }
+    final double multiplier;
+    switch (profile.activityLevel) {
+      case 'lightly_active':
+        multiplier = 1.375;
+        break;
+      case 'moderate':
+        multiplier = 1.55;
+        break;
+      case 'very_active':
+        multiplier = 1.725;
+        break;
+      default:
+        multiplier = 1.2;
+    }
+    final tdee = (bmr * multiplier).round();
+    final bmrInt = bmr.round();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kCardDark,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Metabolism',
+              style: TextStyle(
+                  color: kNeonYellow,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _MetaItem(
+                label: 'BMR',
+                value: '$bmrInt',
+                unit: 'kcal/day',
+                tooltip: 'Calories burned at rest',
+                color: Colors.purpleAccent,
+              ),
+              const SizedBox(width: 12),
+              _MetaItem(
+                label: 'TDEE',
+                value: '$tdee',
+                unit: 'kcal/day',
+                tooltip: 'Maintenance calories',
+                color: Colors.cyanAccent,
+              ),
+              const SizedBox(width: 12),
+              _MetaItem(
+                label: 'Goal',
+                value: '${profile.dailyCalorieGoal}',
+                unit: 'kcal/day',
+                tooltip: 'Your daily target',
+                color: kNeonYellow,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Activity: ${profile.activityLevelLabel}',
+            style: const TextStyle(color: kTextSecondary, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final String unit;
+  final String tooltip;
+  final Color color;
+  const _MetaItem({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.tooltip,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Text(value,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: const TextStyle(
+                    color: kTextSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+            Text(unit,
+                style: const TextStyle(color: kTextSecondary, fontSize: 9)),
+          ],
+        ),
       ),
     );
   }

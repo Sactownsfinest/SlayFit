@@ -10,6 +10,7 @@ import '../providers/workout_provider.dart';
 import '../data/workout_library.dart';
 import '../data/guided_classes.dart';
 import '../services/youtube_service.dart';
+import '../widgets/app_bell_icon.dart';
 import '../services/workout_ai_service.dart';
 import '../main.dart';
 import 'guided_class_player_screen.dart';
@@ -57,6 +58,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen>
             tabs: const [Tab(text: 'Log'), Tab(text: 'Workouts')],
           ),
           actions: [
+            const AppBellIcon(),
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: TextButton.icon(
