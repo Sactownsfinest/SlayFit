@@ -2639,7 +2639,7 @@ class _FoodScanSheetState extends ConsumerState<_FoodScanSheet> {
     try {
       final bytes = await image.readAsBytes();
       final b64 = base64Encode(bytes);
-      const apiKey = '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';
+      const apiKey = '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';
       final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
       final response = await http.post(
         url,
