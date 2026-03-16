@@ -519,7 +519,9 @@ class _ChallengeAccountabilityRow extends ConsumerWidget {
       stream: FirebaseService.catalogCheckinStream(challengeId),
       builder: (context, snap) {
         final all = snap.data ?? [];
-        debugPrint('ACCOUNTABILITY STREAM: id=$challengeId count=${all.length} err=${snap.error}');
+        for (final p in all) {
+          debugPrint('ACCT ROW: uid=${p['uid']} name=${p['displayName']} steps=${p['todaySteps']} myUid=${FirebaseService.uid}');
+        }
         if (all.isEmpty) return const SizedBox.shrink();
         final today = DateTime.now().toIso8601String().substring(0, 10);
         // Sort: self first, then by step count descending

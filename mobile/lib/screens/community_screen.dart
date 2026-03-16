@@ -15,6 +15,7 @@ import '../providers/food_provider.dart';
 import '../providers/challenges_provider.dart';
 import '../providers/health_provider.dart';
 import '../providers/water_provider.dart';
+import '../providers/workout_provider.dart';
 import '../providers/user_provider.dart';
 import '../data/challenge_definitions.dart';
 import '../services/firebase_service.dart';
@@ -413,11 +414,25 @@ class _ActiveChallengeCard extends ConsumerWidget {
       });
     }
 
-    // Sync this user's participation to Firestore for accountability (once per session)
+    // Sync this user's participation + live metrics to Firestore for accountability
     if (!_syncedIds.contains(def.id)) {
       _syncedIds.add(def.id);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        FirebaseService.updateCatalogCheckin(def.id, uc.completedDates);
+        final health = ref.read(healthProvider);
+        final food = ref.read(foodLogProvider);
+        final water = ref.read(waterProvider);
+        final workout = ref.read(workoutProvider);
+        final today = DateTime.now();
+        final todayWorkouts = workout.history
+            .where((s) => s.date.year == today.year && s.date.month == today.month && s.date.day == today.day)
+            .length;
+        FirebaseService.updateCatalogCheckin(
+          def.id, uc.completedDates,
+          todaySteps: health.todaySteps,
+          todayCalories: food.totalCalories.round(),
+          todayWaterMl: water.todayTotalMl.toDouble(),
+          todayWorkouts: todayWorkouts,
+        );
       });
     }
 
@@ -621,7 +636,7 @@ class _ActiveChallengeCard extends ConsumerWidget {
               ),
 
             // ── Accountability section ──
-            _AccountabilitySection(challengeId: def.id),
+            _AccountabilitySection(challengeId: def.id, def: def),
           ],
         ),
       ),
@@ -631,12 +646,40 @@ class _ActiveChallengeCard extends ConsumerWidget {
 
 // ── Accountability section for active challenge cards ─────────────────────────
 
-class _AccountabilitySection extends StatelessWidget {
+class _AccountabilitySection extends ConsumerWidget {
   final String challengeId;
-  const _AccountabilitySection({required this.challengeId});
+  final ChallengeDefinition def;
+  const _AccountabilitySection({required this.challengeId, required this.def});
+
+  String _metricLabel(Map<String, dynamic> p) {
+    final metric = def.requirements.isNotEmpty ? def.requirements.first.metric : null;
+    switch (metric) {
+      case MetricType.steps:
+        final v = p['todaySteps'] as int?;
+        return v != null
+            ? '${v.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} steps'
+            : '— steps';
+      case MetricType.calories:
+        final v = p['todayCalories'] as int?;
+        return v != null ? '$v kcal' : '— kcal';
+      case MetricType.water:
+        final v = p['todayWaterMl'] as double?;
+        return v != null ? '${(v / 29.5735).round()} oz' : '— water';
+      case MetricType.workouts:
+        final v = p['todayWorkouts'] as int?;
+        return v != null ? '$v workout${v != 1 ? 's' : ''}' : '— workouts';
+      case MetricType.protein:
+      case MetricType.foodLogs:
+        final v = p['todayCalories'] as int?;
+        return v != null ? '$v kcal logged' : '— kcal';
+      default:
+        final dates = (p['completedDates'] as List?)?.length ?? 0;
+        return '$dates day${dates != 1 ? 's' : ''} done';
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: FirebaseService.catalogCheckinStream(challengeId),
       builder: (context, snap) {
@@ -646,7 +689,10 @@ class _AccountabilitySection extends StatelessWidget {
         final sorted = [...all]..sort((a, b) {
             final aIsMe = a['uid'] == FirebaseService.uid ? 0 : 1;
             final bIsMe = b['uid'] == FirebaseService.uid ? 0 : 1;
-            return aIsMe.compareTo(bIsMe);
+            if (aIsMe != bIsMe) return aIsMe.compareTo(bIsMe);
+            final aVal = a['todaySteps'] as int? ?? (a['completedDates'] as List?)?.length ?? 0;
+            final bVal = b['todaySteps'] as int? ?? (b['completedDates'] as List?)?.length ?? 0;
+            return bVal.compareTo(aVal);
           });
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,55 +702,65 @@ class _AccountabilitySection extends StatelessWidget {
               Icon(Icons.people_outline, color: kTextSecondary, size: 13),
               SizedBox(width: 5),
               Text('Accountability',
-                  style: TextStyle(
-                      color: kTextSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5)),
+                  style: TextStyle(color: kTextSecondary, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
             ]),
             const SizedBox(height: 8),
             ...sorted.take(6).map((p) {
               final isMe = p['uid'] == FirebaseService.uid;
               final rawName = p['displayName'] as String? ?? 'Someone';
               final name = isMe ? 'You' : rawName;
-              final dates = (p['completedDates'] as List?)?.length ?? 0;
               final checkedToday = (p['completedDates'] as List? ?? []).contains(today);
               final avatarColor = isMe ? kNeonYellow : Colors.cyanAccent;
+              final toUid = p['uid'] as String? ?? '';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 7),
                 child: Row(children: [
                   Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                        color: avatarColor.withValues(alpha: 0.15),
-                        shape: BoxShape.circle),
-                    child: Center(
-                      child: Text(
-                        rawName.isNotEmpty ? rawName[0].toUpperCase() : '?',
-                        style: TextStyle(
-                            color: avatarColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ),
+                    width: 26, height: 26,
+                    decoration: BoxDecoration(color: avatarColor.withValues(alpha: 0.15), shape: BoxShape.circle),
+                    child: Center(child: Text(
+                      rawName.isNotEmpty ? rawName[0].toUpperCase() : '?',
+                      style: TextStyle(color: avatarColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    )),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(name,
-                        style: TextStyle(
-                            color: isMe ? kNeonYellow : kTextPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: TextStyle(color: isMe ? kNeonYellow : kTextPrimary, fontSize: 12, fontWeight: FontWeight.w500)),
+                        Text(_metricLabel(p), style: TextStyle(color: checkedToday ? Colors.greenAccent : kTextSecondary, fontSize: 10)),
+                      ],
+                    ),
                   ),
                   if (checkedToday)
                     const Padding(
                       padding: EdgeInsets.only(right: 4),
-                      child: Icon(Icons.check_circle,
-                          color: Colors.greenAccent, size: 14),
+                      child: Icon(Icons.check_circle, color: Colors.greenAccent, size: 14),
                     ),
-                  Text('$dates day${dates != 1 ? 's' : ''}',
-                      style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                  if (!isMe && toUid.isNotEmpty)
+                    GestureDetector(
+                      onTap: () async {
+                        await FirebaseService.sendNudge(toUid: toUid, challengeName: def.name);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text('Nudge sent to $rawName! 👊'),
+                            backgroundColor: const Color(0xFFFF9500),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ));
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9500).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFF9500).withValues(alpha: 0.4)),
+                        ),
+                        child: const Text('👊 Nudge', style: TextStyle(color: Color(0xFFFF9500), fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
                 ]),
               );
             }),
