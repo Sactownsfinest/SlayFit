@@ -16,6 +16,7 @@ import '../providers/health_provider.dart';
 import '../providers/measurements_provider.dart';
 import '../providers/challenges_provider.dart';
 import '../services/firebase_service.dart';
+import '../widgets/tutorial_dialog.dart';
 
 String _fmtWeight(double kg, bool metric) =>
     metric ? '${kg.toStringAsFixed(1)} kg' : '${(kg * 2.20462).toStringAsFixed(1)} lbs';
@@ -405,7 +406,7 @@ class ProfileScreen extends ConsumerWidget {
                     showDialog(
                       context: context,
                       barrierDismissible: false,
-                      builder: (_) => const _TourDialog(),
+                      builder: (_) => const TutorialDialog(),
                     );
                   },
                   icon: const Icon(Icons.map_outlined, color: kNeonYellow),
