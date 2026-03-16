@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(\"/c/Users/Dan Maeon/flutter/bin/flutter\" build apk --debug)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(\"C:\\\\Users\\\\Dan Maeon\\\\flutter\\\\bin\\\\flutter.bat\" build apk --release --target-platform android-arm64)"
     ]
   }
 }

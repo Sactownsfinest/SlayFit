@@ -304,13 +304,29 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
   @override
   Widget build(BuildContext context) {
     final challenges = ref.watch(challengesProvider);
+    final health = ref.watch(healthProvider);
+    final food = ref.watch(foodLogProvider);
+    final water = ref.watch(waterProvider);
+    final workout = ref.watch(workoutProvider);
+    final today = DateTime.now();
+    final todayWorkouts = workout.history
+        .where((s) => s.date.year == today.year && s.date.month == today.month && s.date.day == today.day)
+        .length;
+
     debugPrint('ACCOUNTABILITY: active=${challenges.active.length}, synced=$_synced');
     if (!_synced && challenges.active.isNotEmpty) {
       _synced = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         for (final uc in challenges.active) {
           debugPrint('ACCOUNTABILITY: syncing ${uc.definitionId} dates=${uc.completedDates}');
-          FirebaseService.updateCatalogCheckin(uc.definitionId, uc.completedDates);
+          FirebaseService.updateCatalogCheckin(
+            uc.definitionId,
+            uc.completedDates,
+            todaySteps: health.todaySteps,
+            todayCalories: food.totalCalories.round(),
+            todayWaterMl: water.todayTotalMl.toDouble(),
+            todayWorkouts: todayWorkouts,
+          );
         }
       });
     }
@@ -411,7 +427,7 @@ class _ActiveCard extends ConsumerWidget {
               style: const TextStyle(color: kTextSecondary, fontSize: 11),
             ),
             const SizedBox(height: 14),
-            _ChallengeAccountabilityRow(challengeId: def.id),
+            _ChallengeAccountabilityRow(challengeId: def.id, def: def),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -452,12 +468,35 @@ class _ActiveCard extends ConsumerWidget {
 
 // ── Challenge Accountability Row ──────────────────────────────────────────────
 
-class _ChallengeAccountabilityRow extends StatelessWidget {
+class _ChallengeAccountabilityRow extends ConsumerWidget {
   final String challengeId;
-  const _ChallengeAccountabilityRow({required this.challengeId});
+  final ChallengeDefinition def;
+  const _ChallengeAccountabilityRow({required this.challengeId, required this.def});
+
+  String _metricLabel(Map<String, dynamic> p) {
+    // Show the most relevant metric for this challenge type
+    final primaryMetric = def.requirements.isNotEmpty ? def.requirements.first.metric : null;
+    switch (primaryMetric) {
+      case MetricType.steps:
+        final steps = p['todaySteps'] as int?;
+        return steps != null ? '${steps.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} steps' : '— steps';
+      case MetricType.calories:
+        final cal = p['todayCalories'] as int?;
+        return cal != null ? '${cal} kcal' : '— kcal';
+      case MetricType.water:
+        final ml = p['todayWaterMl'] as double?;
+        return ml != null ? '${(ml / 29.5735).round()} oz water' : '— water';
+      case MetricType.workouts:
+        final w = p['todayWorkouts'] as int?;
+        return w != null ? '$w workout${w != 1 ? 's' : ''}' : '— workouts';
+      default:
+        final dates = (p['completedDates'] as List?)?.length ?? 0;
+        return '$dates day${dates != 1 ? 's' : ''}';
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: FirebaseService.catalogCheckinStream(challengeId),
       builder: (context, snap) {
@@ -465,11 +504,15 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
         debugPrint('ACCOUNTABILITY STREAM: id=$challengeId count=${all.length} err=${snap.error}');
         if (all.isEmpty) return const SizedBox.shrink();
         final today = DateTime.now().toIso8601String().substring(0, 10);
-        // Sort: self first, then others
+        // Sort: self first, then by step count descending
         final sorted = [...all]..sort((a, b) {
             final aIsMe = a['uid'] == FirebaseService.uid ? 0 : 1;
             final bIsMe = b['uid'] == FirebaseService.uid ? 0 : 1;
-            return aIsMe.compareTo(bIsMe);
+            if (aIsMe != bIsMe) return aIsMe.compareTo(bIsMe);
+            // Secondary sort by steps or completion
+            final aSteps = a['todaySteps'] as int? ?? (a['completedDates'] as List?)?.length ?? 0;
+            final bSteps = b['todaySteps'] as int? ?? (b['completedDates'] as List?)?.length ?? 0;
+            return bSteps.compareTo(aSteps);
           });
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -488,14 +531,15 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            ...sorted.take(6).map((p) {
+            ...sorted.take(8).map((p) {
               final isMe = p['uid'] == FirebaseService.uid;
               final rawName = p['displayName'] as String? ?? 'Someone';
               final name = isMe ? 'You' : rawName;
-              final dates = (p['completedDates'] as List?)?.length ?? 0;
               final checkedToday =
                   (p['completedDates'] as List? ?? []).contains(today);
               final avatarColor = isMe ? kNeonYellow : Colors.cyanAccent;
+              final metricText = _metricLabel(p);
+              final toUid = p['uid'] as String? ?? '';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 7),
                 child: Row(
@@ -519,11 +563,22 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(name,
-                          style: TextStyle(
-                              color: isMe ? kNeonYellow : kTextPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: TextStyle(
+                                  color: isMe ? kNeonYellow : kTextPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500)),
+                          Text(metricText,
+                              style: TextStyle(
+                                  color: checkedToday
+                                      ? Colors.greenAccent
+                                      : kTextSecondary,
+                                  fontSize: 10)),
+                        ],
+                      ),
                     ),
                     if (checkedToday)
                       const Padding(
@@ -531,11 +586,41 @@ class _ChallengeAccountabilityRow extends StatelessWidget {
                         child: Icon(Icons.check_circle,
                             color: Colors.greenAccent, size: 14),
                       ),
-                    Text(
-                      '$dates day${dates != 1 ? 's' : ''}',
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 11),
-                    ),
+                    // Nudge button (only for other users)
+                    if (!isMe && toUid.isNotEmpty)
+                      GestureDetector(
+                        onTap: () async {
+                          await FirebaseService.sendNudge(
+                            toUid: toUid,
+                            challengeName: def.name,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Nudge sent to $rawName! 👊'),
+                                backgroundColor: const Color(0xFFFF9500),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF9500).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: const Color(0xFFFF9500).withValues(alpha: 0.4)),
+                          ),
+                          child: const Text('👊 Nudge',
+                              style: TextStyle(
+                                  color: Color(0xFFFF9500),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                   ],
                 ),
               );
@@ -1132,7 +1217,13 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
                         final todayStr = DateTime.now().toIso8601String().substring(0, 10);
                         final newDates = [...widget.uc.completedDates, todayStr];
                         final finished = ref.read(challengesProvider.notifier).checkInToday(def.id);
-                        FirebaseService.updateCatalogCheckin(def.id, newDates);
+                        FirebaseService.updateCatalogCheckin(
+                          def.id, newDates,
+                          todaySteps: health.todaySteps,
+                          todayCalories: food.totalCalories.round(),
+                          todayWaterMl: water.todayTotalMl.toDouble(),
+                          todayWorkouts: todayWorkouts,
+                        );
                         Navigator.pop(context);
                         if (finished) {
                           _showCompletionDialog(context, def, color);
@@ -1166,7 +1257,13 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
                   final todayStr = DateTime.now().toIso8601String().substring(0, 10);
                   final newDates = [...widget.uc.completedDates, todayStr];
                   ref.read(challengesProvider.notifier).checkInToday(def.id);
-                  FirebaseService.updateCatalogCheckin(def.id, newDates);
+                  FirebaseService.updateCatalogCheckin(
+                    def.id, newDates,
+                    todaySteps: health.todaySteps,
+                    todayCalories: food.totalCalories.round(),
+                    todayWaterMl: water.todayTotalMl.toDouble(),
+                    todayWorkouts: todayWorkouts,
+                  );
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text("${def.badgeEmoji} Logged — keep pushing!"),

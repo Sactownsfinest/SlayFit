@@ -206,4 +206,17 @@ class NotificationService {
       ),
     );
   }
+
+  /// Show an immediate push notification for a nudge received from another user.
+  Future<void> showNudgeNotification({
+    required String fromName,
+    required String challengeName,
+  }) async {
+    await _plugin.show(
+      400 + DateTime.now().millisecondsSinceEpoch % 1000,
+      '👊 $fromName nudged you!',
+      'Get moving on "$challengeName" — your squad is watching!',
+      _notificationDetails(),
+    );
+  }
 }

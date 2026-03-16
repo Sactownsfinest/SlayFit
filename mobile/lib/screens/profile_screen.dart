@@ -345,10 +345,14 @@ class ProfileScreen extends ConsumerWidget {
               const _CommunityCard(),
               const SizedBox(height: 20),
 
-              // Fitbit
-              _SectionHeader('FITBIT'),
+              // Step Tracking
+              const _SectionHeader('STEP TRACKING'),
               const SizedBox(height: 8),
               _HealthConnectCard(health: health),
+              const SizedBox(height: 10),
+              _GoogleFitCard(health: health),
+              const SizedBox(height: 10),
+              _PedometerCard(health: health),
               const SizedBox(height: 20),
 
               // Reminders
@@ -386,6 +390,33 @@ class ProfileScreen extends ConsumerWidget {
                     backgroundColor: kNeonYellow,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Take a Tour
+              const _SectionHeader('HELP'),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => const _TourDialog(),
+                    );
+                  },
+                  icon: const Icon(Icons.map_outlined, color: kNeonYellow),
+                  label: const Text('Take a Tour',
+                      style: TextStyle(
+                          color: kNeonYellow, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF2A3550)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
@@ -1416,6 +1447,280 @@ class _HealthConnectCard extends ConsumerWidget {
                 ],
               ],
             ),
+          ],
+        ),
+      ),
+    ]);
+  }
+}
+
+// ── Google Fit Card ────────────────────────────────────────────────────────────
+
+class _GoogleFitCard extends ConsumerWidget {
+  final HealthState health;
+  const _GoogleFitCard({required this.health});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fitbitActive = health.permissionsGranted;
+    final connected = health.googleFitConnected;
+    final disabled = fitbitActive; // Fitbit takes priority
+
+    return _SettingsCard(children: [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: disabled
+                        ? const Color(0xFF2A3550)
+                        : connected
+                            ? const Color(0xFF34D399).withValues(alpha: 0.15)
+                            : const Color(0xFF2A3550),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.directions_run,
+                    color: disabled
+                        ? kTextSecondary.withValues(alpha: 0.4)
+                        : connected
+                            ? const Color(0xFF34D399)
+                            : kTextSecondary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Google Fit',
+                        style: TextStyle(
+                          color: disabled
+                              ? kTextSecondary.withValues(alpha: 0.5)
+                              : kTextPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        disabled
+                            ? 'Unavailable — Fitbit connected'
+                            : connected
+                                ? 'Syncing steps & calories from Google Fit'
+                                : 'Connect Google Fit for steps & calories',
+                        style: const TextStyle(
+                            color: kTextSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (!disabled) ...[
+              const SizedBox(height: 14),
+              if (connected && health.todaySteps != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Today: ${health.todaySteps} steps'
+                    '${health.todayCaloriesBurned != null ? '  •  ${health.todayCaloriesBurned} kcal' : ''}',
+                    style: const TextStyle(
+                        color: kTextSecondary, fontSize: 12),
+                  ),
+                ),
+              Row(
+                children: [
+                  if (!connected)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: health.isLoading
+                            ? null
+                            : () => ref
+                                .read(healthProvider.notifier)
+                                .connectGoogleFit(),
+                        icon: health.isLoading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black),
+                              )
+                            : const Icon(Icons.link, size: 16),
+                        label: const Text('Connect Google Fit'),
+                      ),
+                    )
+                  else ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => ref
+                            .read(healthProvider.notifier)
+                            .fetchGoogleFitData(),
+                        icon: const Icon(Icons.refresh,
+                            size: 16, color: kNeonYellow),
+                        label: const Text('Refresh',
+                            style: TextStyle(color: kNeonYellow)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                              color: Color(0xFF2A3550)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton(
+                      onPressed: () => ref
+                          .read(healthProvider.notifier)
+                          .disconnectGoogleFit(),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(
+                            color: Colors.redAccent),
+                      ),
+                      child: const Text('Disconnect',
+                          style: TextStyle(
+                              color: Colors.redAccent, fontSize: 12)),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    ]);
+  }
+}
+
+// ── Phone Pedometer Card ───────────────────────────────────────────────────────
+
+class _PedometerCard extends ConsumerWidget {
+  final HealthState health;
+  const _PedometerCard({required this.health});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fitbitActive = health.permissionsGranted;
+    final gfitActive = health.googleFitConnected;
+    final active = health.pedometerActive;
+    final disabled = fitbitActive || gfitActive;
+
+    return _SettingsCard(children: [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: disabled
+                        ? const Color(0xFF2A3550)
+                        : active
+                            ? const Color(0xFF34D399).withValues(alpha: 0.15)
+                            : const Color(0xFF2A3550),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.phone_android,
+                    color: disabled
+                        ? kTextSecondary.withValues(alpha: 0.4)
+                        : active
+                            ? const Color(0xFF34D399)
+                            : kTextSecondary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Phone Pedometer',
+                        style: TextStyle(
+                          color: disabled
+                              ? kTextSecondary.withValues(alpha: 0.5)
+                              : kTextPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        disabled
+                            ? 'Unavailable — ${fitbitActive ? 'Fitbit' : 'Google Fit'} connected'
+                            : active
+                                ? 'Using phone sensor for steps (also picks up Samsung Health)'
+                                : 'Use phone step sensor — works with Samsung Health',
+                        style: const TextStyle(
+                            color: kTextSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (!disabled) ...[
+              const SizedBox(height: 14),
+              if (active && health.todaySteps != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Today: ${health.todaySteps} steps',
+                    style: const TextStyle(
+                        color: kTextSecondary, fontSize: 12),
+                  ),
+                ),
+              Row(
+                children: [
+                  if (!active)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: health.isLoading
+                            ? null
+                            : () => ref
+                                .read(healthProvider.notifier)
+                                .connectPedometer(),
+                        icon: health.isLoading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black),
+                              )
+                            : const Icon(Icons.sensors, size: 16),
+                        label: const Text('Enable Pedometer'),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => ref
+                            .read(healthProvider.notifier)
+                            .disconnectPedometer(),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                              color: Colors.redAccent),
+                        ),
+                        child: const Text('Disable',
+                            style: TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 12)),
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

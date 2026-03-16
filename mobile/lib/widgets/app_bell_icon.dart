@@ -1,17 +1,51 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
 import '../providers/challenges_provider.dart';
 import '../providers/notification_feed_provider.dart';
 import '../services/firebase_service.dart';
+import '../services/notification_service.dart';
 
 // ── Bell button — drop into any AppBar actions list ───────────────────────────
 
-class AppBellIcon extends ConsumerWidget {
+class AppBellIcon extends ConsumerStatefulWidget {
   const AppBellIcon({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppBellIcon> createState() => _AppBellIconState();
+}
+
+class _AppBellIconState extends ConsumerState<AppBellIcon> {
+  StreamSubscription<List<AppNotification>>? _notifSub;
+  final _seenNudgeIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _notifSub = FirebaseService.myNotificationsStream().listen((notifs) {
+      for (final n in notifs) {
+        if (n.type == 'challenge_nudge' &&
+            !n.read &&
+            !_seenNudgeIds.contains(n.id)) {
+          _seenNudgeIds.add(n.id);
+          NotificationService().showNudgeNotification(
+            fromName: n.fromName,
+            challengeName: n.challengeName ?? 'your challenge',
+          );
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final localUnread =
         ref.watch(notifFeedProvider).where((n) => !n.read).length;
 
@@ -91,20 +125,58 @@ class NotificationPanelSheet extends ConsumerWidget {
                 color: const Color(0xFF2A3550),
                 borderRadius: BorderRadius.circular(2)),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
-              children: [
-                Icon(Icons.notifications_outlined,
-                    color: kNeonYellow, size: 20),
-                SizedBox(width: 8),
-                Text('Notifications',
-                    style: TextStyle(
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16)),
-              ],
-            ),
+          StreamBuilder<List<AppNotification>>(
+            stream: FirebaseService.myNotificationsStream(),
+            builder: (context, snap) {
+              final invites = (snap.data ?? [])
+                  .where((n) => n.type == 'challenge_invite')
+                  .toList();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_outlined,
+                        color: kNeonYellow, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Notifications',
+                        style: TextStyle(
+                            color: kTextPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16)),
+                    const Spacer(),
+                    if (invites.length > 1)
+                      TextButton(
+                        onPressed: () async {
+                          for (final n in invites) {
+                            if (n.definitionId != null) {
+                              ref
+                                  .read(challengesProvider.notifier)
+                                  .joinChallenge(n.definitionId!);
+                            }
+                            await FirebaseService.acceptChallengeInvite(n);
+                            await FirebaseService.deleteNotification(n.id);
+                          }
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Accepted all ${invites.length} challenges! 🏆'),
+                                backgroundColor: kNeonYellow,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Accept All',
+                            style: TextStyle(
+                                color: kNeonYellow,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13)),
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
           Expanded(
             child: StreamBuilder<List<AppNotification>>(
@@ -166,8 +238,12 @@ class _FbNotifCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isInvite = notif.type == 'challenge_invite';
-    final color =
-        isInvite ? const Color(0xFF007AFF) : const Color(0xFF34C759);
+    final isNudge = notif.type == 'challenge_nudge';
+    final color = isInvite
+        ? const Color(0xFF007AFF)
+        : isNudge
+            ? const Color(0xFFFF9500)
+            : const Color(0xFF34C759);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -189,7 +265,9 @@ class _FbNotifCard extends ConsumerWidget {
                 Icon(
                     isInvite
                         ? Icons.emoji_events_outlined
-                        : Icons.check_circle_outline,
+                        : isNudge
+                            ? Icons.notifications_active_outlined
+                            : Icons.check_circle_outline,
                     color: color,
                     size: 20),
                 const SizedBox(width: 8),
@@ -197,7 +275,9 @@ class _FbNotifCard extends ConsumerWidget {
                   child: Text(
                     isInvite
                         ? '${notif.fromName} invited you to a challenge'
-                        : '${notif.fromName} accepted your challenge invite',
+                        : isNudge
+                            ? '${notif.fromName} nudged you'
+                            : '${notif.fromName} accepted your challenge invite',
                     style: TextStyle(
                         color: kTextPrimary,
                         fontWeight: notif.read
@@ -223,7 +303,17 @@ class _FbNotifCard extends ConsumerWidget {
                       fontWeight: FontWeight.w600)),
             ],
             const SizedBox(height: 10),
-            if (isInvite)
+            if (isNudge)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () =>
+                      FirebaseService.deleteNotification(notif.id),
+                  child: const Text('Got it',
+                      style: TextStyle(color: kTextSecondary, fontSize: 12)),
+                ),
+              )
+            else if (isInvite)
               Row(
                 children: [
                   Expanded(
@@ -235,8 +325,8 @@ class _FbNotifCard extends ConsumerWidget {
                               .joinChallenge(notif.definitionId!);
                         }
                         await FirebaseService.acceptChallengeInvite(notif);
+                        await FirebaseService.deleteNotification(notif.id);
                         if (context.mounted) {
-                          Navigator.pop(context);
                           ScaffoldMessenger.of(context)
                               .showSnackBar(SnackBar(
                             content:
@@ -263,7 +353,6 @@ class _FbNotifCard extends ConsumerWidget {
                     child: OutlinedButton(
                       onPressed: () {
                         FirebaseService.deleteNotification(notif.id);
-                        Navigator.pop(context);
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: kTextSecondary,

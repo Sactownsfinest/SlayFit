@@ -662,23 +662,34 @@ class FirebaseService {
   // ── Catalog Challenge Accountability ───────────────────────────────────────
 
   /// Write this user's check-in progress for a catalog challenge so others can see it.
+  /// Optionally include current metric values (e.g. today's step count) for live accountability.
   static Future<void> updateCatalogCheckin(
-      String challengeId, List<String> completedDates) async {
+      String challengeId, List<String> completedDates, {
+      int? todaySteps,
+      int? todayCalories,
+      double? todayWaterMl,
+      int? todayWorkouts,
+  }) async {
     if (uid == null) { debugPrint('CHECKIN: uid is null, skipping'); return; }
     try {
       final name = await getDisplayName();
       debugPrint('CHECKIN: writing $challengeId for $uid ($name)');
+      final data = <String, dynamic>{
+        'uid': uid,
+        'displayName': name,
+        'completedDates': completedDates,
+        'lastCheckIn': DateTime.now().toIso8601String(),
+      };
+      if (todaySteps != null) data['todaySteps'] = todaySteps;
+      if (todayCalories != null) data['todayCalories'] = todayCalories;
+      if (todayWaterMl != null) data['todayWaterMl'] = todayWaterMl;
+      if (todayWorkouts != null) data['todayWorkouts'] = todayWorkouts;
       await _db
           .collection('catalog_checkins')
           .doc(challengeId)
           .collection('users')
           .doc(uid)
-          .set({
-        'uid': uid,
-        'displayName': name,
-        'completedDates': completedDates,
-        'lastCheckIn': DateTime.now().toIso8601String(),
-      }, SetOptions(merge: true));
+          .set(data, SetOptions(merge: true));
       debugPrint('CHECKIN: write success');
     } catch (e) { debugPrint('CHECKIN ERROR: $e'); }
   }
@@ -784,6 +795,27 @@ class FirebaseService {
       'commentCount': FieldValue.increment(1),
     });
     await batch.commit();
+  }
+
+  /// Send a nudge notification to another user about a challenge.
+  static Future<void> sendNudge({
+    required String toUid,
+    required String challengeName,
+  }) async {
+    if (uid == null) return;
+    final myName = await getDisplayName();
+    await _db
+        .collection('users')
+        .doc(toUid)
+        .collection('notifications')
+        .add({
+      'type': 'challenge_nudge',
+      'fromUid': uid,
+      'fromName': myName,
+      'challengeName': challengeName,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Accept a challenge invite — joins the challenge and notifies the sender.
