@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config.dart';
 
-const _kGroqApiKey = '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';
+const _kGroqApiKey = kGroqApiKey;
 const _kModel = 'llama-3.3-70b-versatile';
 
 class ClaudeService {

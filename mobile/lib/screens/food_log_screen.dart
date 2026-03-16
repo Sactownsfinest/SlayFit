@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../config.dart';
 import '../providers/food_provider.dart';
 import '../providers/meal_plan_provider.dart';
 import '../providers/notification_feed_provider.dart';
@@ -2639,7 +2640,7 @@ class _FoodScanSheetState extends ConsumerState<_FoodScanSheet> {
     try {
       final bytes = await image.readAsBytes();
       final b64 = base64Encode(bytes);
-      const apiKey = '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';
+      const apiKey = kGroqApiKey;
       final url = Uri.parse('https://api.groq.com/openai/v1/chat/completions');
       final response = await http.post(
         url,
