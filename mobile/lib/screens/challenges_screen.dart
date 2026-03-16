@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
@@ -299,37 +300,48 @@ class _ActiveTab extends ConsumerStatefulWidget {
 }
 
 class _ActiveTabState extends ConsumerState<_ActiveTab> {
-  bool _synced = false;
+  Timer? _syncTimer;
 
   @override
-  Widget build(BuildContext context) {
-    final challenges = ref.watch(challengesProvider);
-    final health = ref.watch(healthProvider);
-    final food = ref.watch(foodLogProvider);
-    final water = ref.watch(waterProvider);
-    final workout = ref.watch(workoutProvider);
+  void initState() {
+    super.initState();
+    // Delay 3 s so health/food/water providers have time to load their data
+    _syncTimer = Timer(const Duration(seconds: 3), _syncToFirebase);
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncToFirebase() {
+    if (!mounted) return;
+    final challenges = ref.read(challengesProvider);
+    if (challenges.active.isEmpty) return;
+    final health = ref.read(healthProvider);
+    final food = ref.read(foodLogProvider);
+    final water = ref.read(waterProvider);
+    final workout = ref.read(workoutProvider);
     final today = DateTime.now();
     final todayWorkouts = workout.history
         .where((s) => s.date.year == today.year && s.date.month == today.month && s.date.day == today.day)
         .length;
-
-    debugPrint('ACCOUNTABILITY: active=${challenges.active.length}, synced=$_synced');
-    if (!_synced && challenges.active.isNotEmpty) {
-      _synced = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        for (final uc in challenges.active) {
-          debugPrint('ACCOUNTABILITY: syncing ${uc.definitionId} dates=${uc.completedDates}');
-          FirebaseService.updateCatalogCheckin(
-            uc.definitionId,
-            uc.completedDates,
-            todaySteps: health.todaySteps,
-            todayCalories: food.totalCalories.round(),
-            todayWaterMl: water.todayTotalMl.toDouble(),
-            todayWorkouts: todayWorkouts,
-          );
-        }
-      });
+    for (final uc in challenges.active) {
+      FirebaseService.updateCatalogCheckin(
+        uc.definitionId,
+        uc.completedDates,
+        todaySteps: health.todaySteps,
+        todayCalories: food.totalCalories.round(),
+        todayWaterMl: water.todayTotalMl.toDouble(),
+        todayWorkouts: todayWorkouts,
+      );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final challenges = ref.watch(challengesProvider);
     if (challenges.active.isEmpty) {
       return Center(
         child: Column(
@@ -489,9 +501,15 @@ class _ChallengeAccountabilityRow extends ConsumerWidget {
       case MetricType.workouts:
         final w = p['todayWorkouts'] as int?;
         return w != null ? '$w workout${w != 1 ? 's' : ''}' : '— workouts';
+      case MetricType.protein:
+      case MetricType.foodLogs:
+        final cal = p['todayCalories'] as int?;
+        return cal != null ? '$cal kcal logged' : '— kcal';
+      case MetricType.manual:
+      case MetricType.photoChallenge:
       default:
         final dates = (p['completedDates'] as List?)?.length ?? 0;
-        return '$dates day${dates != 1 ? 's' : ''}';
+        return '$dates day${dates != 1 ? 's' : ''} done';
     }
   }
 

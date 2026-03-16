@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class UpdateInfo {
   final String version;
@@ -55,12 +56,31 @@ class UpdateService {
   }
 
   /// Downloads the APK and opens the system installer.
+  /// Returns true if the system installer was launched, false if bailed for permissions.
   /// [onProgress] receives values 0.0–1.0.
-  static Future<void> downloadAndInstall(
+  static Future<bool> downloadAndInstall(
     String url, {
     void Function(double)? onProgress,
   }) async {
-    final dir = await getTemporaryDirectory();
+    // On Android 8+ the app needs canRequestPackageInstalls() == true.
+    // If not granted, opening the APK silently fails. Request it first.
+    if (Platform.isAndroid) {
+      final status = await Permission.requestInstallPackages.status;
+      if (!status.isGranted) {
+        await Permission.requestInstallPackages.request();
+        // request() opens system settings on Android 8+; user must toggle and return.
+        return false;
+      }
+    }
+
+    // Use external cache dir — it's in file_paths.xml and FileProvider-accessible.
+    Directory dir;
+    if (Platform.isAndroid) {
+      final dirs = await getExternalCacheDirectories();
+      dir = (dirs != null && dirs.isNotEmpty) ? dirs.first : await getTemporaryDirectory();
+    } else {
+      dir = await getTemporaryDirectory();
+    }
     final file = File('${dir.path}/slayfit_update.apk');
 
     final client = http.Client();
@@ -80,7 +100,9 @@ class UpdateService {
       client.close();
     }
 
-    await OpenFile.open(file.path);
+    final result = await OpenFile.open(file.path);
+    debugPrint('[UpdateService] OpenFile result: ${result.type} — ${result.message}');
+    return true;
   }
 
   // ── Semver comparison ─────────────────────────────────────────────────────

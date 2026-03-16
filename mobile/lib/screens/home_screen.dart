@@ -62,14 +62,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startUpdate() async {
     if (_pendingUpdate == null) return;
     setState(() { _downloadingUpdate = true; _downloadProgress = 0; });
-    final version = _pendingUpdate!.version;
-    await UpdateService.downloadAndInstall(
+    final installed = await UpdateService.downloadAndInstall(
       _pendingUpdate!.downloadUrl,
       onProgress: (p) { if (mounted) setState(() => _downloadProgress = p); },
     );
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('skipped_update_version', version);
-    if (mounted) setState(() { _downloadingUpdate = false; _pendingUpdate = null; });
+    if (mounted) {
+      setState(() { _downloadingUpdate = false; });
+      // Only dismiss the banner if the system installer was actually launched.
+      // If we bailed early for permissions, keep the banner so the user can retry.
+      if (installed) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('skipped_update_version', _pendingUpdate!.version);
+        setState(() { _pendingUpdate = null; });
+      }
+    }
   }
 
   static const _screens = [
