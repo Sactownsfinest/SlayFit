@@ -818,6 +818,168 @@ class FirebaseService {
     });
   }
 
+  // ── Block/Report ──────────────────────────────────────────────────────────────
+
+  /// Block a user — writes to current user's blocked list in Firestore
+  static Future<void> blockUser(String targetUid, String targetName) async {
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).collection('blocked').doc(targetUid).set({
+      'uid': targetUid,
+      'displayName': targetName,
+      'blockedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Unblock a user
+  static Future<void> unblockUser(String targetUid) async {
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).collection('blocked').doc(targetUid).delete();
+  }
+
+  /// Stream of blocked user UIDs for the current user
+  static Stream<List<String>> blockedUsersStream() {
+    if (uid == null) return Stream.value([]);
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('blocked')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => d.id).toList());
+  }
+
+  /// Report content (chat message, recipe post, user)
+  static Future<void> reportContent({
+    required String type, // 'chat_message', 'recipe_post', 'user'
+    required String targetId,
+    required String targetUid,
+    required String reason,
+    String? snippet, // text preview of reported content
+  }) async {
+    if (uid == null) return;
+    final myName = await getDisplayName();
+    await _db.collection('reports').add({
+      'type': type,
+      'targetId': targetId,
+      'targetUid': targetUid,
+      'reportedBy': uid,
+      'reportedByName': myName,
+      'reason': reason,
+      'snippet': snippet,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    // Also mark the content as reported for quick UI flagging
+    if (type == 'recipe_post') {
+      await _db.collection('recipe_posts').doc(targetId).update({
+        'reportCount': FieldValue.increment(1),
+      });
+    }
+  }
+
+  // ── Recipe Post Deletion ───────────────────────────────────────────────────
+
+  static Future<void> deleteRecipePost(String postId) async {
+    await _db.collection('recipe_posts').doc(postId).delete();
+  }
+
+  // ── Private Chat Rooms ────────────────────────────────────────────────────────
+
+  /// Create a new private chat room, returns the room ID
+  static Future<String> createPrivateRoom(String roomName) async {
+    if (uid == null) throw Exception('Not logged in');
+    final myName = await getDisplayName();
+    // Generate a short 6-char invite code
+    final code = (DateTime.now().millisecondsSinceEpoch % 1000000).toString().padLeft(6, '0');
+    final doc = await _db.collection('private_rooms').add({
+      'name': roomName,
+      'inviteCode': code,
+      'createdBy': uid,
+      'creatorName': myName,
+      'members': [uid],
+      'memberNames': {uid: myName},
+      'createdAt': FieldValue.serverTimestamp(),
+      'lastMessage': '',
+      'lastMessageAt': FieldValue.serverTimestamp(),
+    });
+    return doc.id;
+  }
+
+  /// Join a private room by invite code, returns room ID or null if not found
+  static Future<String?> joinPrivateRoomByCode(String code) async {
+    if (uid == null) return null;
+    final myName = await getDisplayName();
+    final snap = await _db
+        .collection('private_rooms')
+        .where('inviteCode', isEqualTo: code.trim())
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final doc = snap.docs.first;
+    await doc.reference.update({
+      'members': FieldValue.arrayUnion([uid]),
+      'memberNames.$uid': myName,
+    });
+    return doc.id;
+  }
+
+  /// Stream of private rooms the current user is a member of
+  static Stream<List<Map<String, dynamic>>> myPrivateRoomsStream() {
+    if (uid == null) return Stream.value([]);
+    return _db
+        .collection('private_rooms')
+        .where('members', arrayContains: uid)
+        .orderBy('lastMessageAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  }
+
+  /// Stream of messages in a private room
+  static Stream<List<ChatMsg>> privateRoomStream(String roomId) {
+    return _db
+        .collection('private_rooms')
+        .doc(roomId)
+        .collection('messages')
+        .orderBy('ts', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((snap) => snap.docs.reversed.map((d) {
+              final data = d.data();
+              return ChatMsg(
+                id: d.id,
+                userId: data['userId'] as String? ?? '',
+                displayName: data['name'] as String? ?? 'Unknown',
+                text: data['text'] as String? ?? '',
+                timestamp: DateTime.fromMillisecondsSinceEpoch(data['ts'] as int? ?? 0),
+              );
+            }).toList());
+  }
+
+  /// Send a message to a private room
+  static Future<void> sendPrivateRoomMessage(String roomId, String text) async {
+    if (uid == null) return;
+    final myName = await getDisplayName();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    await _db.collection('private_rooms').doc(roomId).collection('messages').add({
+      'userId': uid,
+      'name': myName,
+      'text': text,
+      'ts': ts,
+    });
+    await _db.collection('private_rooms').doc(roomId).update({
+      'lastMessage': text.length > 60 ? '${text.substring(0, 60)}...' : text,
+      'lastMessageAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Leave a private room
+  static Future<void> leavePrivateRoom(String roomId) async {
+    if (uid == null) return;
+    await _db.collection('private_rooms').doc(roomId).update({
+      'members': FieldValue.arrayRemove([uid]),
+      'memberNames.$uid': FieldValue.delete(),
+    });
+  }
+
   /// Accept a challenge invite — joins the challenge and notifies the sender.
   static Future<void> acceptChallengeInvite(AppNotification notif) async {
     if (uid == null) return;

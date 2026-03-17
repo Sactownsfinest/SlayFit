@@ -21,6 +21,14 @@ import '../data/challenge_definitions.dart';
 import '../services/firebase_service.dart';
 import '../widgets/app_bell_icon.dart';
 
+// ── Profanity filter ─────────────────────────────────────────────────────────
+
+const _kBannedWords = ['nigger', 'nigga', 'faggot', 'retard', 'kike', 'spic', 'chink', 'cunt', 'fuck', 'shit', 'ass', 'bitch'];
+bool _containsBannedWord(String text) {
+  final lower = text.toLowerCase();
+  return _kBannedWords.any((w) => lower.contains(w));
+}
+
 // ── Root Screen ───────────────────────────────────────────────────────────────
 
 class CommunityScreen extends ConsumerStatefulWidget {
@@ -41,7 +49,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 6, vsync: this);
     _tab.addListener(() => setState(() {}));
     _init();
   }
@@ -85,12 +93,13 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
           labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: [
-            const Tab(text: 'Challenges'),
-            const Tab(text: 'My Progress'),
-            const Tab(text: 'Leaderboard'),
-            const Tab(text: 'Chat'),
-            const Tab(text: 'Recipes'),
+          tabs: const [
+            Tab(text: 'Challenges'),
+            Tab(text: 'My Progress'),
+            Tab(text: 'Leaderboard'),
+            Tab(text: 'Chat'),
+            Tab(text: 'Rooms'),
+            Tab(text: 'Recipes'),
           ],
         ),
       ),
@@ -103,6 +112,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen>
                 _MyProgressTab(),
                 _LeaderboardTab(),
                 _ChatTab(displayName: _displayName),
+                const _PrivateRoomsTab(),
                 _RecipesTab(displayName: _displayName),
               ],
             ),
@@ -2194,6 +2204,14 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
   Future<void> _send() async {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _sending) return;
+    if (_containsBannedWord(text)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Message contains prohibited language. Please keep it respectful.'),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     _inputCtrl.clear();
     setState(() => _sending = true);
     try {
@@ -2209,27 +2227,34 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
     return Column(
       children: [
         Expanded(
-          child: StreamBuilder<List<ChatMsg>>(
-            stream: FirebaseService.chatStream(),
-            builder: (context, snap) {
-              final msgs = snap.data ?? [];
-              if (msgs.isEmpty) {
-                return const Center(
-                  child: Text('No messages yet.\nBe the first to say hi! 👋',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: kTextSecondary)),
-                );
-              }
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => _scrollToBottom());
-              return ListView.builder(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                itemCount: msgs.length,
-                itemBuilder: (_, i) => _ChatBubble(
-                  msg: msgs[i],
-                  isMe: msgs[i].userId == FirebaseService.uid,
-                ),
+          child: StreamBuilder<List<String>>(
+            stream: FirebaseService.blockedUsersStream(),
+            builder: (context, blockedSnap) {
+              final blocked = blockedSnap.data ?? [];
+              return StreamBuilder<List<ChatMsg>>(
+                stream: FirebaseService.chatStream(),
+                builder: (context, snap) {
+                  final allMsgs = snap.data ?? [];
+                  final msgs = allMsgs.where((m) => !blocked.contains(m.userId)).toList();
+                  if (msgs.isEmpty) {
+                    return const Center(
+                      child: Text('No messages yet.\nBe the first to say hi! 👋',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: kTextSecondary)),
+                    );
+                  }
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _scrollToBottom());
+                  return ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    itemCount: msgs.length,
+                    itemBuilder: (_, i) => _ChatBubble(
+                      msg: msgs[i],
+                      isMe: msgs[i].userId == FirebaseService.uid,
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -2345,7 +2370,7 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
   }
 }
 
-class _ChatBubble extends StatelessWidget {
+class _ChatBubble extends ConsumerWidget {
   final ChatMsg msg;
   final bool isMe;
 
@@ -2378,59 +2403,172 @@ class _ChatBubble extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final time = DateFormat('h:mm a').format(msg.timestamp);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment:
-            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          if (!isMe)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 3),
-              child: Text(msg.displayName,
-                  style: const TextStyle(
-                      color: kNeonYellow,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
+  void _showMessageOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: kSurfaceDark,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2)),
             ),
-          Row(
-            mainAxisAlignment:
-                isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-            children: [
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? kNeonYellow.withValues(alpha: 0.15)
-                        : kCardDark,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(14),
-                      topRight: const Radius.circular(14),
-                      bottomLeft: Radius.circular(isMe ? 14 : 3),
-                      bottomRight: Radius.circular(isMe ? 3 : 14),
-                    ),
-                    border: isMe
-                        ? Border.all(
-                            color: kNeonYellow.withValues(alpha: 0.3))
-                        : null,
-                  ),
-                  child: _buildMessageText(msg.text, isMe),
-                ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
+              title: const Text('Report message', style: TextStyle(color: kTextPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                _showReportDialog(context, 'chat_message');
+              },
+            ),
+            if (!isMe)
+              ListTile(
+                leading: const Icon(Icons.block, color: Colors.redAccent),
+                title: const Text('Block user', style: TextStyle(color: kTextPrimary)),
+                subtitle: Text('Block ${msg.displayName}', style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _confirmBlock(context);
+                },
               ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-            child: Text(time,
-                style: const TextStyle(
-                    color: kTextSecondary, fontSize: 10)),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportDialog(BuildContext context, String type) {
+    final reasons = ['Spam', 'Harassment', 'Hate speech', 'Inappropriate content', 'Other'];
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Report Message', style: TextStyle(color: kTextPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: reasons.map((r) => ListTile(
+            dense: true,
+            title: Text(r, style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+            onTap: () async {
+              Navigator.pop(context);
+              await FirebaseService.reportContent(
+                type: type,
+                targetId: msg.id,
+                targetUid: msg.userId,
+                reason: r,
+                snippet: msg.text.length > 100 ? msg.text.substring(0, 100) : msg.text,
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Message reported. Thank you.'),
+                  backgroundColor: Colors.orangeAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+          )).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBlock(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Block User', style: TextStyle(color: kTextPrimary)),
+        content: Text('Block ${msg.displayName}? Their messages will be hidden from you.',
+            style: const TextStyle(color: kTextSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseService.blockUser(msg.userId, msg.displayName);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('${msg.displayName} has been blocked.'),
+                  backgroundColor: Colors.redAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+            child: const Text('Block'),
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final time = DateFormat('h:mm a').format(msg.timestamp);
+    return GestureDetector(
+      onLongPress: () => _showMessageOptions(context),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (!isMe)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 3),
+                child: Text(msg.displayName,
+                    style: const TextStyle(
+                        color: kNeonYellow,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ),
+            Row(
+              mainAxisAlignment:
+                  isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isMe
+                          ? kNeonYellow.withValues(alpha: 0.15)
+                          : kCardDark,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(14),
+                        topRight: const Radius.circular(14),
+                        bottomLeft: Radius.circular(isMe ? 14 : 3),
+                        bottomRight: Radius.circular(isMe ? 3 : 14),
+                      ),
+                      border: isMe
+                          ? Border.all(
+                              color: kNeonYellow.withValues(alpha: 0.3))
+                          : null,
+                    ),
+                    child: _buildMessageText(msg.text, isMe),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+              child: Text(time,
+                  style: const TextStyle(
+                      color: kTextSecondary, fontSize: 10)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2732,6 +2870,76 @@ class _RecipePostCardState extends ConsumerState<_RecipePostCard> {
     if (mounted) setState(() => _sendingComment = false);
   }
 
+  void _showRecipeReportDialog(BuildContext context, RecipePost post) {
+    final reasons = ['Spam', 'Inappropriate content', 'Hate speech', 'Harassment', 'Other'];
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Report Post', style: TextStyle(color: kTextPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: reasons.map((r) => ListTile(
+            dense: true,
+            title: Text(r, style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+            onTap: () async {
+              Navigator.pop(context);
+              await FirebaseService.reportContent(
+                type: 'recipe_post',
+                targetId: post.id,
+                targetUid: post.uid,
+                reason: r,
+                snippet: post.caption.length > 100 ? post.caption.substring(0, 100) : post.caption,
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Post reported. Thank you.'),
+                  backgroundColor: Colors.orangeAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+          )).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBlockUser(BuildContext context, String targetUid, String targetName) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Block User', style: TextStyle(color: kTextPrimary)),
+        content: Text('Block $targetName? Their posts will be hidden.',
+            style: const TextStyle(color: kTextSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseService.blockUser(targetUid, targetName);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('$targetName has been blocked.'),
+                  backgroundColor: Colors.redAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseService.uid ?? '';
@@ -2749,7 +2957,7 @@ class _RecipePostCardState extends ConsumerState<_RecipePostCard> {
         children: [
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            padding: const EdgeInsets.fromLTRB(14, 12, 4, 8),
             child: Row(children: [
               CircleAvatar(
                 radius: 18,
@@ -2770,6 +2978,49 @@ class _RecipePostCardState extends ConsumerState<_RecipePostCard> {
                 ],
               )),
               const Text('👨‍🍳', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 4),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: kTextSecondary, size: 20),
+                color: kCardDark,
+                onSelected: (value) async {
+                  if (value == 'report') {
+                    _showRecipeReportDialog(context, widget.post);
+                  } else if (value == 'block') {
+                    _confirmBlockUser(context, widget.post.uid, widget.post.displayName);
+                  } else if (value == 'delete') {
+                    await FirebaseService.deleteRecipePost(widget.post.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Post deleted.'),
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                    }
+                  }
+                },
+                itemBuilder: (_) {
+                  final myUid = FirebaseService.uid ?? '';
+                  final isOwn = widget.post.uid == myUid;
+                  return <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(value: 'report', child: Row(children: [
+                      Icon(Icons.flag_outlined, color: Colors.orangeAccent, size: 18),
+                      SizedBox(width: 10),
+                      Text('Report post', style: TextStyle(color: kTextPrimary)),
+                    ])),
+                    if (!isOwn)
+                      const PopupMenuItem<String>(value: 'block', child: Row(children: [
+                        Icon(Icons.block, color: Colors.redAccent, size: 18),
+                        SizedBox(width: 10),
+                        Text('Block user', style: TextStyle(color: kTextPrimary)),
+                      ])),
+                    if (isOwn)
+                      const PopupMenuItem<String>(value: 'delete', child: Row(children: [
+                        Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                        SizedBox(width: 10),
+                        Text('Delete post', style: TextStyle(color: Colors.redAccent)),
+                      ])),
+                  ];
+                },
+              ),
             ]),
           ),
 
@@ -2875,6 +3126,735 @@ class _RecipePostCardState extends ConsumerState<_RecipePostCard> {
               },
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Private Rooms Tab ──────────────────────────────────────────────────────────
+
+class _PrivateRoomsTab extends ConsumerStatefulWidget {
+  const _PrivateRoomsTab();
+  @override
+  ConsumerState<_PrivateRoomsTab> createState() => _PrivateRoomsTabState();
+}
+
+class _PrivateRoomsTabState extends ConsumerState<_PrivateRoomsTab> {
+  void _showCreateRoomDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Create Private Room', style: TextStyle(color: kTextPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: kTextPrimary),
+          decoration: InputDecoration(
+            hintText: 'Room name…',
+            hintStyle: const TextStyle(color: kTextSecondary),
+            filled: true,
+            fillColor: kSurfaceDark,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: kNeonYellow, width: 1.5)),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(context);
+              try {
+                final roomId = await FirebaseService.createPrivateRoom(name);
+                if (mounted) {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => _PrivateRoomChatScreen(roomId: roomId, roomName: name),
+                  ));
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Failed to create room: $e'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                }
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showJoinByCodeDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Join Private Room', style: TextStyle(color: kTextPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter the 6-digit invite code:', style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: kNeonYellow, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 4),
+              decoration: InputDecoration(
+                counterText: '',
+                filled: true,
+                fillColor: kSurfaceDark,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: kNeonYellow, width: 2)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kNeonYellow, foregroundColor: Colors.black),
+            onPressed: () async {
+              final code = ctrl.text.trim();
+              if (code.length != 6) return;
+              Navigator.pop(context);
+              final roomId = await FirebaseService.joinPrivateRoomByCode(code);
+              if (!mounted) return;
+              if (roomId == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Room not found. Check the code and try again.'),
+                  behavior: SnackBarBehavior.floating,
+                ));
+              } else {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => _PrivateRoomChatScreen(roomId: roomId, roomName: 'Private Room'),
+                ));
+              }
+            },
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Action buttons
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(child: _ActionButton(icon: Icons.add, label: 'Create Room', onTap: _showCreateRoomDialog)),
+              const SizedBox(width: 10),
+              Expanded(child: _ActionButton(icon: Icons.login, label: 'Join by Code', onTap: _showJoinByCodeDialog, secondary: true)),
+            ],
+          ),
+        ),
+        // Room list
+        Expanded(
+          child: StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FirebaseService.myPrivateRoomsStream(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: kNeonYellow));
+              }
+              final rooms = snap.data ?? [];
+              if (rooms.isEmpty) {
+                return const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_outline, color: kTextSecondary, size: 48),
+                      SizedBox(height: 16),
+                      Text('No private rooms yet', style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                      SizedBox(height: 8),
+                      Text('Create a room or join one with an invite code.', style: TextStyle(color: kTextSecondary), textAlign: TextAlign.center),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                itemCount: rooms.length,
+                itemBuilder: (_, i) {
+                  final room = rooms[i];
+                  final roomId = room['id'] as String? ?? '';
+                  final roomName = room['name'] as String? ?? 'Room';
+                  final inviteCode = room['inviteCode'] as String? ?? '------';
+                  final lastMessage = room['lastMessage'] as String? ?? '';
+                  final members = (room['members'] as List?)?.length ?? 0;
+                  return GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => _PrivateRoomChatScreen(roomId: roomId, roomName: roomName),
+                    )),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: kCardDark,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF2A3550)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 46, height: 46,
+                            decoration: BoxDecoration(
+                              color: kNeonYellow.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(child: Icon(Icons.lock, color: kNeonYellow, size: 22)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(child: Text(roomName,
+                                        style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 14))),
+                                    GestureDetector(
+                                      onTap: () {
+                                        Clipboard.setData(ClipboardData(text: inviteCode));
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                          content: Text('Invite code copied!'),
+                                          behavior: SnackBarBehavior.floating,
+                                          duration: Duration(seconds: 2),
+                                        ));
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: kNeonYellow.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: kNeonYellow.withValues(alpha: 0.3)),
+                                        ),
+                                        child: Text(inviteCode, style: const TextStyle(color: kNeonYellow, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  lastMessage.isEmpty ? 'No messages yet' : lastMessage,
+                                  style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Text('$members member${members != 1 ? 's' : ''}',
+                                    style: const TextStyle(color: kTextSecondary, fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, color: kTextSecondary, size: 20),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Private Room Chat Screen ──────────────────────────────────────────────────
+
+class _PrivateRoomChatScreen extends ConsumerStatefulWidget {
+  final String roomId;
+  final String roomName;
+  const _PrivateRoomChatScreen({required this.roomId, required this.roomName});
+
+  @override
+  ConsumerState<_PrivateRoomChatScreen> createState() => _PrivateRoomChatScreenState();
+}
+
+class _PrivateRoomChatScreenState extends ConsumerState<_PrivateRoomChatScreen> {
+  final _inputCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  bool _sending = false;
+  List<Map<String, String>> _mentionSuggestions = [];
+  bool _showMentions = false;
+  String _inviteCode = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _inputCtrl.addListener(_onTextChanged);
+    _loadRoomInfo();
+  }
+
+  Future<void> _loadRoomInfo() async {
+    // Subscribe to room to get invite code
+    FirebaseService.myPrivateRoomsStream().listen((rooms) {
+      final room = rooms.where((r) => r['id'] == widget.roomId).toList();
+      if (room.isNotEmpty && mounted) {
+        setState(() => _inviteCode = room.first['inviteCode'] as String? ?? '');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _inputCtrl.removeListener(_onTextChanged);
+    _inputCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    final text = _inputCtrl.text;
+    final cursor = _inputCtrl.selection.baseOffset;
+    if (cursor < 0) return;
+    final before = text.substring(0, cursor.clamp(0, text.length));
+    final match = RegExp(r'@(\w*)$').firstMatch(before);
+    if (match != null) {
+      final query = match.group(1) ?? '';
+      _searchMentions(query);
+    } else {
+      if (_showMentions) setState(() { _showMentions = false; _mentionSuggestions = []; });
+    }
+  }
+
+  Future<void> _searchMentions(String query) async {
+    final results = await FirebaseService.searchUsers(query);
+    if (mounted) setState(() { _mentionSuggestions = results; _showMentions = results.isNotEmpty; });
+  }
+
+  void _insertMention(String name) {
+    final text = _inputCtrl.text;
+    final cursor = _inputCtrl.selection.baseOffset.clamp(0, text.length);
+    final before = text.substring(0, cursor);
+    final after = text.substring(cursor);
+    final newBefore = before.replaceAll(RegExp(r'@\w*$'), '@$name ');
+    _inputCtrl.value = TextEditingValue(
+      text: newBefore + after,
+      selection: TextSelection.collapsed(offset: newBefore.length),
+    );
+    setState(() { _showMentions = false; _mentionSuggestions = []; });
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _send() async {
+    final text = _inputCtrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    if (_containsBannedWord(text)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Message contains prohibited language. Please keep it respectful.'),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    _inputCtrl.clear();
+    setState(() => _sending = true);
+    try {
+      await FirebaseService.sendPrivateRoomMessage(widget.roomId, text);
+      _scrollToBottom();
+    } catch (_) {}
+    if (mounted) setState(() => _sending = false);
+  }
+
+  void _showMsgOptions(BuildContext context, ChatMsg msg) {
+    final isMe = msg.userId == FirebaseService.uid;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: kSurfaceDark,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(color: const Color(0xFF2A3550), borderRadius: BorderRadius.circular(2))),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
+              title: const Text('Report message', style: TextStyle(color: kTextPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                _showReportMsgDialog(context, msg);
+              },
+            ),
+            if (!isMe)
+              ListTile(
+                leading: const Icon(Icons.block, color: Colors.redAccent),
+                title: const Text('Block user', style: TextStyle(color: kTextPrimary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _confirmBlock(context, msg);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportMsgDialog(BuildContext context, ChatMsg msg) {
+    final reasons = ['Spam', 'Harassment', 'Hate speech', 'Inappropriate content', 'Other'];
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Report Message', style: TextStyle(color: kTextPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: reasons.map((r) => ListTile(
+            dense: true,
+            title: Text(r, style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+            onTap: () async {
+              Navigator.pop(context);
+              await FirebaseService.reportContent(
+                type: 'chat_message',
+                targetId: msg.id,
+                targetUid: msg.userId,
+                reason: r,
+                snippet: msg.text.length > 100 ? msg.text.substring(0, 100) : msg.text,
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Message reported. Thank you.'),
+                  backgroundColor: Colors.orangeAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+          )).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBlock(BuildContext context, ChatMsg msg) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardDark,
+        title: const Text('Block User', style: TextStyle(color: kTextPrimary)),
+        content: Text('Block ${msg.displayName}? Their messages will be hidden.',
+            style: const TextStyle(color: kTextSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseService.blockUser(msg.userId, msg.displayName);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('${msg.displayName} has been blocked.'),
+                  backgroundColor: Colors.redAccent,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBubble(ChatMsg msg) {
+    final isMe = msg.userId == FirebaseService.uid;
+    final time = DateFormat('h:mm a').format(msg.timestamp);
+    final baseColor = isMe ? kNeonYellow : kTextPrimary;
+    final parts = <InlineSpan>[];
+    int last = 0;
+    for (final match in RegExp(r'@\w+').allMatches(msg.text)) {
+      if (match.start > last) parts.add(TextSpan(text: msg.text.substring(last, match.start)));
+      parts.add(TextSpan(
+        text: match.group(0),
+        style: TextStyle(color: kNeonYellow, fontWeight: FontWeight.bold, backgroundColor: kNeonYellow.withValues(alpha: 0.15)),
+      ));
+      last = match.end;
+    }
+    if (last < msg.text.length) parts.add(TextSpan(text: msg.text.substring(last)));
+
+    return GestureDetector(
+      onLongPress: () => _showMsgOptions(context, msg),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (!isMe)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 3),
+                child: Text(msg.displayName, style: const TextStyle(color: kNeonYellow, fontSize: 11, fontWeight: FontWeight.w600)),
+              ),
+            Row(
+              mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isMe ? kNeonYellow.withValues(alpha: 0.15) : kCardDark,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(14),
+                        topRight: const Radius.circular(14),
+                        bottomLeft: Radius.circular(isMe ? 14 : 3),
+                        bottomRight: Radius.circular(isMe ? 3 : 14),
+                      ),
+                      border: isMe ? Border.all(color: kNeonYellow.withValues(alpha: 0.3)) : null,
+                    ),
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(color: baseColor, fontSize: 14, height: 1.4),
+                        children: parts,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+              child: Text(time, style: const TextStyle(color: kTextSecondary, fontSize: 10)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return Scaffold(
+      backgroundColor: kPrimaryDark,
+      appBar: AppBar(
+        backgroundColor: kSurfaceDark,
+        title: Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.roomName,
+                    style: const TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                if (_inviteCode.isNotEmpty)
+                  Text('Code: $_inviteCode', style: const TextStyle(color: kTextSecondary, fontSize: 11)),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          if (_inviteCode.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _inviteCode));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Invite code copied!'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ));
+              },
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: kNeonYellow.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: kNeonYellow.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_inviteCode, style: const TextStyle(color: kNeonYellow, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.copy, color: kNeonYellow, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: kTextSecondary),
+            color: kCardDark,
+            onSelected: (value) async {
+              if (value == 'leave') {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    backgroundColor: kCardDark,
+                    title: const Text('Leave Room', style: TextStyle(color: kTextPrimary)),
+                    content: const Text('Are you sure you want to leave this room?',
+                        style: TextStyle(color: kTextSecondary)),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel', style: TextStyle(color: kTextSecondary))),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Leave'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await FirebaseService.leavePrivateRoom(widget.roomId);
+                  if (mounted) Navigator.pop(context);
+                }
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'leave', child: Row(children: [
+                Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
+                SizedBox(width: 10),
+                Text('Leave room', style: TextStyle(color: kTextPrimary)),
+              ])),
+            ],
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<List<String>>(
+              stream: FirebaseService.blockedUsersStream(),
+              builder: (context, blockedSnap) {
+                final blocked = blockedSnap.data ?? [];
+                return StreamBuilder<List<ChatMsg>>(
+                  stream: FirebaseService.privateRoomStream(widget.roomId),
+                  builder: (context, snap) {
+                    final allMsgs = snap.data ?? [];
+                    final msgs = allMsgs.where((m) => !blocked.contains(m.userId)).toList();
+                    if (msgs.isEmpty) {
+                      return const Center(
+                        child: Text('No messages yet.\nSay hello! 👋',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: kTextSecondary)),
+                      );
+                    }
+                    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                    return ListView.builder(
+                      controller: _scrollCtrl,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      itemCount: msgs.length,
+                      itemBuilder: (_, i) => _buildBubble(msgs[i]),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, bottomInset + 12),
+            decoration: const BoxDecoration(
+              color: kSurfaceDark,
+              border: Border(top: BorderSide(color: Color(0xFF2A3550), width: 1)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_showMentions && _mentionSuggestions.isNotEmpty)
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(
+                      color: kCardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A3550)),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _mentionSuggestions.length,
+                      itemBuilder: (_, i) {
+                        final user = _mentionSuggestions[i];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.alternate_email, color: kNeonYellow, size: 16),
+                          title: Text(user['displayName'] ?? '', style: const TextStyle(color: kTextPrimary, fontSize: 13)),
+                          onTap: () => _insertMention(user['displayName'] ?? ''),
+                        );
+                      },
+                    ),
+                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _inputCtrl,
+                        style: const TextStyle(color: kTextPrimary, fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Say something…',
+                          hintStyle: const TextStyle(color: kTextSecondary),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          filled: true,
+                          fillColor: kCardDark,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: const BorderSide(color: Color(0xFF2A3550))),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: const BorderSide(color: Color(0xFF2A3550))),
+                          focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: const BorderSide(color: kNeonYellow, width: 1.5)),
+                        ),
+                        onSubmitted: (_) => _send(),
+                        textInputAction: TextInputAction.send,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _send,
+                      child: Container(
+                        width: 44, height: 44,
+                        decoration: const BoxDecoration(color: kNeonYellow, shape: BoxShape.circle),
+                        child: const Icon(Icons.send, color: Colors.black, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
